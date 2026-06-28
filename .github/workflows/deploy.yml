@@ -31,7 +31,7 @@ jobs:
           script: |
             cd ~/tournament-backend
             git pull origin main
-            npm ci --omit=dev
+            npm ci
             npm run build
             npm run db:migrate
             pm2 restart tournament-backend

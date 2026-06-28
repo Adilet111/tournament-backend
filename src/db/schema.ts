@@ -18,6 +18,17 @@ export const competitionStatusEnum = pgEnum('competition_status', [
   'completed',
   'cancelled',
 ]);
+export const tournamentStatusEnum = pgEnum('tournament_status', [
+  'draft',
+  'open',
+  'closed',
+  'completed',
+  'cancelled',
+]);
+export const registrationStatusEnum = pgEnum('registration_status', [
+  'registered',
+  'withdrawn',
+]);
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -49,6 +60,79 @@ export const sports = pgTable('sports', {
   slug: text('slug').notNull().unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * A player's profile for a given sport. A user can only register for a
+ * tournament in a sport they have a profile in. `rating` is optional and is
+ * what gets compared against a tournament's `minRating` when one is set.
+ */
+export const sportProfiles = pgTable(
+  'sport_profiles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    sportId: uuid('sport_id')
+      .notNull()
+      .references(() => sports.id, { onDelete: 'cascade' }),
+    rating: integer('rating'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userSportUnique: unique('sport_profiles_user_sport_unique').on(t.userId, t.sportId),
+  }),
+);
+
+/**
+ * A tournament created by an admin. `minRating` is optional: when null, anyone
+ * with a profile in the sport may register; when set, the player's sport
+ * profile rating must be at least this value. `bracketInfo` is a free-text
+ * block describing the bracket for now.
+ */
+export const tournaments = pgTable('tournaments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sportId: uuid('sport_id')
+    .notNull()
+    .references(() => sports.id),
+  createdBy: uuid('created_by')
+    .notNull()
+    .references(() => users.id),
+  title: text('title').notNull(),
+  location: text('location').notNull(),
+  startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+  prizePool: integer('prize_pool').notNull().default(0),
+  entryFee: integer('entry_fee').notNull().default(0),
+  currency: text('currency').notNull().default('KZT'),
+  bracketInfo: text('bracket_info'),
+  minRating: integer('min_rating'),
+  status: tournamentStatusEnum('status').notNull().default('open'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * A player's registration for a tournament. One row per (tournament, user).
+ */
+export const tournamentRegistrations = pgTable(
+  'tournament_registrations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tournamentId: uuid('tournament_id')
+      .notNull()
+      .references(() => tournaments.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    status: registrationStatusEnum('status').notNull().default('registered'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tournamentUserUnique: unique('tournament_registrations_tournament_user_unique').on(
+      t.tournamentId,
+      t.userId,
+    ),
+  }),
+);
 
 export const competitions = pgTable('competitions', {
   id: uuid('id').primaryKey().defaultRandom(),

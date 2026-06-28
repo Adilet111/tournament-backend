@@ -1,11 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
+import { OAuth2Client } from 'google-auth-library';
 import { parse } from '../../lib/validate';
 import { AppError } from '../../lib/errors';
 import { db } from '../../db/client';
 import { authIdentities, users } from '../../db/schema';
-import { adminEmails } from '../../config/env';
+import { adminEmails, env } from '../../config/env';
 import type { SessionRole } from '../../plugins/auth';
 
 interface OAuthClaims {
@@ -14,19 +15,45 @@ interface OAuthClaims {
   name?: string;
 }
 
+const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID);
+
 /**
- * TODO: verify the incoming id token and return the user's claims.
- *  - Google: validate via google-auth-library (or the tokeninfo endpoint),
- *    check `aud === GOOGLE_CLIENT_ID`.
+ * Verify the incoming id token and return the user's claims.
+ *  - Google: validate the signature/expiry via google-auth-library and check
+ *    `aud === GOOGLE_CLIENT_ID`.
  *  - Apple: verify the RS256 signature against Apple's JWKS
- *    (https://appleid.apple.com/auth/keys), check iss + aud.
- * Until implemented, this returns 501.
+ *    (https://appleid.apple.com/auth/keys), check iss + aud. (Not yet implemented.)
  */
 async function verifyToken(
-  _provider: 'google' | 'apple',
-  _idToken: string,
+  provider: 'google' | 'apple',
+  idToken: string,
 ): Promise<OAuthClaims> {
-  throw new AppError('OAuth token verification not implemented yet', 501);
+  if (provider !== 'google') {
+    throw new AppError('Apple login not implemented yet', 501);
+  }
+  if (!env.GOOGLE_CLIENT_ID) {
+    throw new AppError('GOOGLE_CLIENT_ID is not configured on the server', 500);
+  }
+
+  let payload;
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken,
+      audience: env.GOOGLE_CLIENT_ID,
+    });
+    payload = ticket.getPayload();
+  } catch {
+    throw new AppError('Invalid Google id token', 401);
+  }
+
+  if (!payload?.sub || !payload.email) {
+    throw new AppError('Google id token is missing required claims', 401);
+  }
+  if (!payload.email_verified) {
+    throw new AppError('Google account email is not verified', 401);
+  }
+
+  return { providerUid: payload.sub, email: payload.email, name: payload.name };
 }
 
 // Find or create the user for an OAuth identity; first admin-listed email

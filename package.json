@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "Backbone for a sports tournament platform API (Fastify + Drizzle + Postgres)",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
@@ -20,6 +22,7 @@
     "drizzle-orm": "^0.33.0",
     "fastify": "^4.28.1",
     "fastify-plugin": "^4.5.1",
+    "google-auth-library": "^10.7.0",
     "postgres": "^3.4.4",
     "zod": "^3.23.8"
   },

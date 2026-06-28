@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+  migrations-check:
+    name: Migrations up to date
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: tournament
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/tournament
+      JWT_SECRET: ci-secret-at-least-16-chars
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply existing migrations
+        run: npm run db:migrate
+
+      - name: Check for schema drift (no uncommitted migrations)
+        run: |
+          npm run db:generate -- --name drift_check
+          if git diff --quiet drizzle/; then
+            echo "Schema is in sync with migrations."
+          else
+            echo "ERROR: Schema has changes not reflected in migration files."
+            echo "Run 'npm run db:generate' locally and commit the output."
+            git diff drizzle/
+            exit 1
+          fi

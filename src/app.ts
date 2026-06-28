@@ -41,7 +41,7 @@ export function buildApp(): FastifyInstance {
     return reply.code(err.statusCode ?? 500).send({ error: 'internal server error' });
   });
 
-  app.get('/health', async () => ({ status: 'ok2' }));
+  app.get('/health', async () => ({ status: 'ok22222' }));
 
   // Register module routes here.
   app.register(authRoutes);

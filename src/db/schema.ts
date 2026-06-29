@@ -99,13 +99,20 @@ export const tournaments = pgTable('tournaments', {
     .notNull()
     .references(() => users.id),
   title: text('title').notNull(),
+  description: text('description'),
+  type: competitionTypeEnum('type').notNull().default('free'),
   location: text('location').notNull(),
+  city: text('city'),
   startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
   prizePool: integer('prize_pool').notNull().default(0),
   entryFee: integer('entry_fee').notNull().default(0),
   currency: text('currency').notNull().default('KZT'),
   bracketInfo: text('bracket_info'),
+  // Max number of players. Null means no limit.
+  capacity: integer('capacity'),
+  // Optional rating range for eligibility. Null bound means open on that side.
   minRating: integer('min_rating'),
+  maxRating: integer('max_rating'),
   status: tournamentStatusEnum('status').notNull().default('open'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

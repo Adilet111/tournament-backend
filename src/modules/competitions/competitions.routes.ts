@@ -11,14 +11,25 @@ import { competitions } from '../../db/schema';
  * zod-validate the input, check role in preHandler, talk to the db, return.
  */
 
-const createBody = z.object({
-  sportId: z.string().uuid(),
-  title: z.string().min(1),
-  description: z.string().optional(),
-  type: z.enum(['free', 'paid']),
-  entryFee: z.number().int().nonnegative().optional(),
-  currency: z.string().optional(),
-});
+const createBody = z
+  .object({
+    sportId: z.string().uuid(),
+    title: z.string().min(1),
+    description: z.string().optional(),
+    type: z.enum(['free', 'paid']),
+    entryFee: z.number().int().nonnegative().optional(),
+    currency: z.string().optional(),
+    city: z.string().optional(),
+    // Omit for no limit.
+    capacity: z.number().int().positive().optional(),
+    // Omit either bound to leave that side open.
+    minRating: z.number().int().nonnegative().optional(),
+    maxRating: z.number().int().nonnegative().optional(),
+  })
+  .refine(
+    (b) => b.minRating === undefined || b.maxRating === undefined || b.minRating <= b.maxRating,
+    { message: 'minRating must be <= maxRating', path: ['minRating'] },
+  );
 
 export async function competitionsRoutes(app: FastifyInstance) {
   // Public: list open competitions.
@@ -47,6 +58,10 @@ export async function competitionsRoutes(app: FastifyInstance) {
           type: body.type,
           entryFee: body.type === 'paid' ? body.entryFee ?? 0 : 0,
           currency: body.currency ?? 'KZT',
+          city: body.city,
+          capacity: body.capacity ?? null,
+          minRating: body.minRating ?? null,
+          maxRating: body.maxRating ?? null,
           status: 'open',
         })
         .returning()

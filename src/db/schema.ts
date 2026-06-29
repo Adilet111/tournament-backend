@@ -147,6 +147,12 @@ export const competitions = pgTable('competitions', {
   type: competitionTypeEnum('type').notNull().default('free'),
   entryFee: integer('entry_fee').notNull().default(0),
   currency: text('currency').notNull().default('KZT'),
+  city: text('city'),
+  // Max number of players. Null means no limit.
+  capacity: integer('capacity'),
+  // Optional rating range for eligibility. Null bound means open on that side.
+  minRating: integer('min_rating'),
+  maxRating: integer('max_rating'),
   status: competitionStatusEnum('status').notNull().default('draft'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

@@ -7,6 +7,7 @@ import authPlugin from './plugins/auth';
 import { authRoutes } from './modules/auth/auth.routes';
 import { competitionsRoutes } from './modules/competitions/competitions.routes';
 import { tournamentsRoutes } from './modules/tournaments/tournaments.routes';
+import { sportsRoutes } from './modules/sports/sports.routes';
 
 export function buildApp(): FastifyInstance {
   function loggerConfig() {
@@ -47,6 +48,7 @@ export function buildApp(): FastifyInstance {
   app.register(authRoutes);
   app.register(competitionsRoutes);
   app.register(tournamentsRoutes);
+  app.register(sportsRoutes);
 
   return app;
 }

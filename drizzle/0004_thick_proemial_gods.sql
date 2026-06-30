@@ -1,0 +1,2 @@
+ALTER TABLE "sport_profiles" ADD COLUMN "attributes" jsonb DEFAULT '{}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "sport_profiles" ADD COLUMN "updated_at" timestamp with time zone DEFAULT now() NOT NULL;

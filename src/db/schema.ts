@@ -1,4 +1,4 @@
-import { pgEnum, pgTable, text, timestamp, uuid, integer, unique } from 'drizzle-orm/pg-core';
+import { pgEnum, pgTable, text, timestamp, uuid, integer, jsonb, unique } from 'drizzle-orm/pg-core';
 
 /**
  * Core tables to get you running. Extend with the rest of the model following
@@ -76,8 +76,12 @@ export const sportProfiles = pgTable(
     sportId: uuid('sport_id')
       .notNull()
       .references(() => sports.id, { onDelete: 'cascade' }),
+    // The sport-specific questionnaire answers (shape validated per-sport in code).
+    attributes: jsonb('attributes').notNull().default({}),
+    // Seeded from the answers on creation, later updated from match results.
     rating: integer('rating'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     userSportUnique: unique('sport_profiles_user_sport_unique').on(t.userId, t.sportId),

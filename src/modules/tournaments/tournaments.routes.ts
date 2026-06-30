@@ -121,10 +121,19 @@ export async function tournamentsRoutes(app: FastifyInstance) {
         throw new AppError('you need a profile in this sport to register', 403);
       }
 
-      if (tournament.minRating !== null) {
-        if (profile.rating === null || profile.rating < tournament.minRating) {
+      if (tournament.minRating !== null || tournament.maxRating !== null) {
+        if (profile.rating === null) {
+          throw new AppError('your profile has no rating yet', 403);
+        }
+        if (tournament.minRating !== null && profile.rating < tournament.minRating) {
           throw new AppError(
             `your rating must be at least ${tournament.minRating} to register`,
+            403,
+          );
+        }
+        if (tournament.maxRating !== null && profile.rating > tournament.maxRating) {
+          throw new AppError(
+            `your rating must be at most ${tournament.maxRating} to register`,
             403,
           );
         }

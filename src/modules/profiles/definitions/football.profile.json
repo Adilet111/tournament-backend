@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "1.0.0",
+  "sport": "football",
+  "displayName": "Football",
+  "archetype": "team",
+  "lpScale": 100,
+  "onboarding": {
+    "constants": { "BASE": 1000, "FLOOR": 1000, "CAP": 2500 },
+    "questions": [
+      {
+        "id": "highestLevel",
+        "role": "anchor",
+        "prompt": "Highest level you have played",
+        "options": [
+          { "value": "recreational", "label": "Recreational / pickup", "points": 1000 },
+          { "value": "school", "label": "School / university", "points": 1300 },
+          { "value": "amateur_league", "label": "Amateur league", "points": 1600 },
+          { "value": "semi_pro", "label": "Semi-professional", "points": 1900 },
+          { "value": "professional", "label": "Professional", "points": 2300 }
+        ]
+      },
+      {
+        "id": "experience",
+        "role": "additive",
+        "appliesBeforeRust": true,
+        "prompt": "How long have you been playing?",
+        "options": [
+          { "value": "lt2", "label": "Less than 2 years", "points": 0 },
+          { "value": "y2to5", "label": "2–5 years", "points": 100 },
+          { "value": "y5to10", "label": "5–10 years", "points": 200 },
+          { "value": "gt10", "label": "More than 10 years", "points": 300 }
+        ]
+      },
+      {
+        "id": "selfSkill",
+        "role": "additive",
+        "appliesBeforeRust": true,
+        "prompt": "How would you rate your own skill?",
+        "options": [
+          { "value": "beginner", "label": "Beginner", "points": 0 },
+          { "value": "intermediate", "label": "Intermediate", "points": 75 },
+          { "value": "advanced", "label": "Advanced", "points": 150 },
+          { "value": "elite", "label": "Elite", "points": 225 }
+        ]
+      },
+      {
+        "id": "recency",
+        "role": "rustMultiplier",
+        "prompt": "When did you last play regularly?",
+        "options": [
+          { "value": "now", "label": "I play every week", "factor": 1.0 },
+          { "value": "months", "label": "A few months ago", "factor": 0.9 },
+          { "value": "year", "label": "About a year ago", "factor": 0.8 },
+          { "value": "longAgo", "label": "Several years ago", "factor": 0.65 }
+        ]
+      },
+      {
+        "id": "activity",
+        "role": "additive",
+        "appliesBeforeRust": false,
+        "prompt": "How often do you play now?",
+        "options": [
+          { "value": "none", "label": "Not currently", "points": 0 },
+          { "value": "low", "label": "A few times a month", "points": 25 },
+          { "value": "medium", "label": "Weekly", "points": 50 },
+          { "value": "high", "label": "Several times a week", "points": 100 }
+        ]
+      },
+      {
+        "id": "position",
+        "role": "attributeWeighting",
+        "affectsRating": false,
+        "prompt": "Main position",
+        "options": [
+          { "value": "goalkeeper", "label": "Goalkeeper" },
+          { "value": "defender", "label": "Defender" },
+          { "value": "midfielder", "label": "Midfielder" },
+          { "value": "forward", "label": "Forward" }
+        ]
+      },
+      {
+        "id": "preferredFoot",
+        "role": "attributeWeighting",
+        "affectsRating": false,
+        "prompt": "Preferred foot",
+        "options": [
+          { "value": "left", "label": "Left" },
+          { "value": "right", "label": "Right" },
+          { "value": "both", "label": "Both" }
+        ]
+      }
+    ]
+  },
+  "divisionLabels": ["IV", "III", "II", "I"],
+  "tiers": [
+    { "name": "Iron", "min": 1000, "max": 1200, "divisions": 4, "openLeaderboard": false },
+    { "name": "Bronze", "min": 1200, "max": 1500, "divisions": 4, "openLeaderboard": false },
+    { "name": "Silver", "min": 1500, "max": 1800, "divisions": 4, "openLeaderboard": false },
+    { "name": "Gold", "min": 1800, "max": 2100, "divisions": 4, "openLeaderboard": false },
+    { "name": "Platinum", "min": 2100, "max": 2400, "divisions": 4, "openLeaderboard": false },
+    { "name": "Challenger", "min": 2400, "max": null, "divisions": 0, "openLeaderboard": true }
+  ]
+}

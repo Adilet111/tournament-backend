@@ -5,7 +5,6 @@ import { parse } from '../../lib/validate';
 import { AppError } from '../../lib/errors';
 import { db } from '../../db/client';
 import { sportProfiles, sports } from '../../db/schema';
-import { getSportConfig } from './sportConfigs';
 import { registry, getProfile, score, Profile, Question } from './rating';
 
 const slugParam = z.object({ slug: z.string().min(1) });
@@ -36,21 +35,15 @@ export async function profilesRoutes(app: FastifyInstance) {
   });
 
   // Public: the questionnaire for a single sport, so the frontend can render the
-  // form. Served from the sport's *.profile.json when one exists, else from the
-  // legacy sportConfigs registry.
+  // form. Served from the sport's *.profile.json definition.
   app.get('/sports/:slug/questions', async (req) => {
     const { slug } = parse(slugParam, req.params);
 
     const profile = getProfile(slug);
-    if (profile) {
-      return { sport: slug, displayName: profile.displayName, questions: renderQuestions(profile) };
-    }
-
-    const config = getSportConfig(slug);
-    if (!config) {
+    if (!profile) {
       throw new AppError('this sport has no profile questionnaire yet', 404);
     }
-    return { sport: slug, questions: config.questions };
+    return { sport: slug, displayName: profile.displayName, questions: renderQuestions(profile) };
   });
 
   // Authenticated: create or update the caller's profile for a sport.
@@ -59,8 +52,7 @@ export async function profilesRoutes(app: FastifyInstance) {
     const { slug } = parse(slugParam, req.params);
 
     const definition = getProfile(slug);
-    const config = definition ? undefined : getSportConfig(slug);
-    if (!definition && !config) {
+    if (!definition) {
       throw new AppError('this sport has no profile questionnaire yet', 404);
     }
 
@@ -71,24 +63,16 @@ export async function profilesRoutes(app: FastifyInstance) {
       throw new AppError('sport not found', 404);
     }
 
-    // Validate the answers and seed the rating. Sports with a *.profile.json go
-    // through the JSON-driven rating engine; the rest use legacy sportConfigs.
-    let answers: unknown;
-    let rating: number;
-    let placement: ReturnType<typeof score> | undefined;
-    if (definition) {
-      const parsed = parse(answersRecord, (req.body as any)?.answers);
-      try {
-        placement = score(definition, parsed);
-      } catch (err) {
-        throw new AppError((err as Error).message, 400);
-      }
-      answers = parsed;
-      rating = Math.round(placement.elo);
-    } else {
-      answers = parse(config!.answers, (req.body as any)?.answers);
-      rating = config!.seedRating(answers);
+    // Validate the answers against the sport's definition and seed the rating
+    // through the JSON-driven rating engine.
+    const answers = parse(answersRecord, (req.body as any)?.answers);
+    let placement: ReturnType<typeof score>;
+    try {
+      placement = score(definition, answers);
+    } catch (err) {
+      throw new AppError((err as Error).message, 400);
     }
+    const rating = Math.round(placement.elo);
 
     const profile = (
       await db
@@ -101,7 +85,7 @@ export async function profilesRoutes(app: FastifyInstance) {
         .returning()
     )[0];
 
-    return reply.code(201).send(placement ? { ...profile, placement } : profile);
+    return reply.code(201).send({ ...profile, placement });
   });
 
   // Authenticated: list the caller's sport profiles.

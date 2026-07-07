@@ -71,4 +71,32 @@ export async function profilesRoutes(app: FastifyInstance) {
       .innerJoin(sports, eq(sports.id, sportProfiles.sportId))
       .where(eq(sportProfiles.userId, req.user.sub));
   });
+
+  // Authenticated: the caller's profile for a single sport, or 404 if absent.
+  app.get('/profiles/:slug', { preHandler: app.authenticate }, async (req) => {
+    const { slug } = parse(slugParam, req.params);
+
+    const profile = (
+      await db
+        .select({
+          id: sportProfiles.id,
+          sportId: sportProfiles.sportId,
+          sportSlug: sports.slug,
+          sportName: sports.name,
+          rating: sportProfiles.rating,
+          attributes: sportProfiles.attributes,
+          updatedAt: sportProfiles.updatedAt,
+        })
+        .from(sportProfiles)
+        .innerJoin(sports, eq(sports.id, sportProfiles.sportId))
+        .where(and(eq(sportProfiles.userId, req.user.sub), eq(sports.slug, slug)))
+        .limit(1)
+    )[0];
+
+    if (!profile) {
+      throw new AppError('you have no profile for this sport yet', 404);
+    }
+
+    return profile;
+  });
 }

@@ -115,4 +115,4 @@ Full request/response examples with curl live in [`docs/tournament-admin-api.md`
 
 1. Implement `verifyToken` in `auth.routes.ts` (Google + Apple signature checks).
 2. Add the payment gateway + webhook.
-3. Add a `pg_dump` backup cron (self-hosting means you own backups).
+3. Add a `pg_dump` backup cron (self-hosting means you own backups). 2

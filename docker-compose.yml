@@ -9,7 +9,10 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # Bind to loopback only. Docker bypasses ufw, so publishing on 0.0.0.0
+      # exposes Postgres to the internet regardless of firewall rules. Reach it
+      # from your machine via an SSH tunnel (localhost:5432 on the VPS).
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-tournament}"]
       interval: 5s

@@ -109,8 +109,22 @@ export async function profilesRoutes(app: FastifyInstance) {
   app.get('/profiles/:slug', { preHandler: app.authenticate }, async (req) => {
     const { slug } = parse(slugParam, req.params);
 
-    const profile = (
-      await db
+    // TEMP debug: log the exact lookup parameters and which DB we're hitting.
+    const dbHost = (() => {
+      try {
+        return new URL(process.env.DATABASE_URL ?? '').host;
+      } catch {
+        return 'unknown';
+      }
+    })();
+    req.log.info(
+      { userSub: req.user.sub, slug, dbHost },
+      'GET /profiles/:slug — lookup params',
+    );
+
+    let rows;
+    try {
+      rows = await db
         .select({
           id: sportProfiles.id,
           sportId: sportProfiles.sportId,
@@ -123,9 +137,22 @@ export async function profilesRoutes(app: FastifyInstance) {
         .from(sportProfiles)
         .innerJoin(sports, eq(sports.id, sportProfiles.sportId))
         .where(and(eq(sportProfiles.userId, req.user.sub), eq(sports.slug, slug)))
-        .limit(1)
-    )[0];
+        .limit(1);
+    } catch (err) {
+      // Log the raw database error before it gets swallowed as a 500.
+      req.log.error(
+        { err, userSub: req.user.sub, slug, dbHost },
+        'GET /profiles/:slug — database query failed',
+      );
+      throw err;
+    }
 
+    req.log.info(
+      { userSub: req.user.sub, slug, matched: rows.length, row: rows[0] ?? null },
+      'GET /profiles/:slug — query result',
+    );
+
+    const profile = rows[0];
     if (!profile) {
       throw new AppError('you have no profile for this sport yet', 404);
     }

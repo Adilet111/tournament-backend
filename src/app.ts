@@ -9,6 +9,7 @@ import { competitionsRoutes } from './modules/competitions/competitions.routes';
 import { tournamentsRoutes } from './modules/tournaments/tournaments.routes';
 import { sportsRoutes } from './modules/sports/sports.routes';
 import { profilesRoutes } from './modules/profiles/profiles.routes';
+import { usersRoutes } from './modules/users/users.routes';
 
 export function buildApp(): FastifyInstance {
   function loggerConfig() {
@@ -51,6 +52,7 @@ export function buildApp(): FastifyInstance {
   app.register(tournamentsRoutes);
   app.register(sportsRoutes);
   app.register(profilesRoutes);
+  app.register(usersRoutes);
 
   return app;
 }

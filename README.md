@@ -33,6 +33,71 @@ npm run db:migrate
 npm run dev                   # GET http://localhost:3000/health -> {"status":"ok"}
 ```
 
+## API endpoints
+
+Legend: 🔓 public · 🔒 any logged-in user · 👑 admin only.
+Full request/response examples with curl live in [`docs/tournament-admin-api.md`](docs/tournament-admin-api.md).
+
+**Health**
+
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| GET | `/health` | 🔓 | liveness check |
+
+**Auth**
+
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| POST | `/auth/login` | 🔓 | exchange an OAuth id token for a session JWT |
+| GET | `/auth/me` | 🔒 | current user from the token |
+
+**Sports & profiles**
+
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| GET | `/sports` | 🔓 | list sports |
+| POST | `/sports` | 👑 | create a sport |
+| GET | `/questions` | 🔓 | onboarding questions for every sport with a profile definition |
+| GET | `/sports/:slug/questions` | 🔓 | onboarding questions for one sport |
+| POST | `/sports/:slug/profile` | 🔒 | create/update your profile; returns rating + placement (tier/division/lp) |
+| GET | `/sports/:slug/profile` | 🔒 | your profile for a sport |
+| GET | `/profiles/:slug` | 🔒 | your profile for a sport (alias of the above) |
+| GET | `/me/profiles` | 🔒 | all of your sport profiles |
+
+**Tournaments — player**
+
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| GET | `/tournaments` | 🔓 | list open tournaments |
+| GET | `/tournaments/:id` | 🔓 | one tournament + registered count |
+| POST | `/tournaments/:id/register` | 🔒 | self-register (rating- and capacity-gated) |
+| POST | `/tournaments/:id/withdraw` | 🔒 | self-withdraw |
+
+**Tournaments — admin**
+
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| POST | `/tournaments` | 👑 | create a tournament |
+| GET | `/admin/tournaments` | 👑 | list all tournaments (any status; `?status=` filter) |
+| PATCH | `/tournaments/:id` | 👑 | edit fields + move through lifecycle status |
+| DELETE | `/tournaments/:id` | 👑 | delete (only when it has no registrations) |
+| GET | `/tournaments/:id/registrations` | 👑 | view participants (name, email, rating, status) |
+| POST | `/tournaments/:id/registrations` | 👑 | add a participant (admin override) |
+| PATCH | `/tournaments/:id/registrations/:userId` | 👑 | change a participant's status |
+| DELETE | `/tournaments/:id/registrations/:userId` | 👑 | remove a participant |
+
+**Users — admin**
+
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| GET | `/admin/users/:id` | 👑 | one user's full record: account, all sport profiles, tournament history |
+
+**Competitions** *(deprecated — superseded by tournaments)*
+
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| GET | `/competitions` | 🔓 | list open competitions (legacy) |
+
 ## To extend
 
 - **Add a table:** define it in `db/schema.ts`, run `npm run db:generate && npm run db:migrate`.

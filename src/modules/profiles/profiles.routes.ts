@@ -106,25 +106,13 @@ export async function profilesRoutes(app: FastifyInstance) {
   });
 
   // Authenticated: the caller's profile for a single sport, or 404 if absent.
-  app.get('/profiles/:slug', { preHandler: app.authenticate }, async (req) => {
+  // Available at both /profiles/:slug and /sports/:slug/profile (symmetric with
+  // the POST above).
+  const getProfileHandler = async (req: any) => {
     const { slug } = parse(slugParam, req.params);
 
-    // TEMP debug: log the exact lookup parameters and which DB we're hitting.
-    const dbHost = (() => {
-      try {
-        return new URL(process.env.DATABASE_URL ?? '').host;
-      } catch {
-        return 'unknown';
-      }
-    })();
-    req.log.info(
-      { userSub: req.user.sub, slug, dbHost },
-      'GET /profiles/:slug — lookup params',
-    );
-
-    let rows;
-    try {
-      rows = await db
+    const profile = (
+      await db
         .select({
           id: sportProfiles.id,
           sportId: sportProfiles.sportId,
@@ -137,26 +125,16 @@ export async function profilesRoutes(app: FastifyInstance) {
         .from(sportProfiles)
         .innerJoin(sports, eq(sports.id, sportProfiles.sportId))
         .where(and(eq(sportProfiles.userId, req.user.sub), eq(sports.slug, slug)))
-        .limit(1);
-    } catch (err) {
-      // Log the raw database error before it gets swallowed as a 500.
-      req.log.error(
-        { err, userSub: req.user.sub, slug, dbHost },
-        'GET /profiles/:slug — database query failed',
-      );
-      throw err;
-    }
+        .limit(1)
+    )[0];
 
-    req.log.info(
-      { userSub: req.user.sub, slug, matched: rows.length, row: rows[0] ?? null },
-      'GET /profiles/:slug — query result',
-    );
-
-    const profile = rows[0];
     if (!profile) {
       throw new AppError('you have no profile for this sport yet', 404);
     }
 
     return profile;
-  });
+  };
+
+  app.get('/profiles/:slug', { preHandler: app.authenticate }, getProfileHandler);
+  app.get('/sports/:slug/profile', { preHandler: app.authenticate }, getProfileHandler);
 }

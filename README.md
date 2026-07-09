@@ -30,10 +30,13 @@ docker compose up -d db
 npm install
 npm run db:generate           # SQL from schema
 npm run db:migrate
-npm run dev                   # GET http://localhost:3000/health -> {"status":"ok"}
+npm run dev                   # GET http://localhost:3000/api/health -> {"status":"ok3"}
 ```
 
 ## API endpoints
+
+**All routes are served under the `/api` prefix** (e.g. `GET /api/tournaments`).
+The paths in the tables below omit it for brevity.
 
 Legend: 🔓 public · 🔒 any logged-in user · 👑 admin only.
 Full request/response examples with curl live in [`docs/tournament-admin-api.md`](docs/tournament-admin-api.md).

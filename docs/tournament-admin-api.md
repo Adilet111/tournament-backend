@@ -4,10 +4,12 @@ Admin management + full visibility over tournaments and participants.
 
 ## Conventions
 
+All routes are served under the **`/api`** prefix — it's baked into `$BASE` below.
+
 ```bash
 # Set these first
-BASE=https://ainura-the-best.kz          # or http://localhost:3000
-TOKEN=<player-jwt>                        # from POST /auth/login
+BASE=https://ainura-the-best.kz/api       # or http://localhost:3000/api
+TOKEN=<player-jwt>                        # from POST /api/auth/login
 ADMIN_TOKEN=<admin-jwt>                   # a user whose role is "admin"
 TID=<tournament-uuid>
 UID=<user-uuid>

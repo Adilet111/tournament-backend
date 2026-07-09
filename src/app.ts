@@ -44,15 +44,22 @@ export function buildApp(): FastifyInstance {
     return reply.code(err.statusCode ?? 500).send({ error: 'internal server error' });
   });
 
-  app.get('/health', async () => ({ status: 'ok3' }));
+  // All routes live under /api so nginx can proxy a single prefix and the
+  // frontend (served at /) owns everything else. e.g. GET /api/tournaments.
+  app.register(
+    async (api) => {
+      api.get('/health', async () => ({ status: 'ok3' }));
 
-  // Register module routes here.
-  app.register(authRoutes);
-  app.register(competitionsRoutes);
-  app.register(tournamentsRoutes);
-  app.register(sportsRoutes);
-  app.register(profilesRoutes);
-  app.register(usersRoutes);
+      // Register module routes here.
+      api.register(authRoutes);
+      api.register(competitionsRoutes);
+      api.register(tournamentsRoutes);
+      api.register(sportsRoutes);
+      api.register(profilesRoutes);
+      api.register(usersRoutes);
+    },
+    { prefix: '/api' },
+  );
 
   return app;
 }

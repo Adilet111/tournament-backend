@@ -70,6 +70,18 @@ async function registeredCount(tournamentId: string): Promise<number> {
   return row?.value ?? 0;
 }
 
+// Recompute the registered count from tournament_registrations and persist it
+// on the tournament's `occupiedPlaces` column so it stays authoritative after
+// any registration change. Returns the freshly computed count.
+async function syncOccupiedPlaces(tournamentId: string): Promise<number> {
+  const value = await registeredCount(tournamentId);
+  await db
+    .update(tournaments)
+    .set({ occupiedPlaces: value })
+    .where(eq(tournaments.id, tournamentId));
+  return value;
+}
+
 async function loadTournamentOr404(id: string) {
   const t = (
     await db.select().from(tournaments).where(eq(tournaments.id, id)).limit(1)
@@ -224,10 +236,9 @@ export async function tournamentsRoutes(app: FastifyInstance) {
 
       // Capacity gate: only when a limit is set, and only for a new/returning
       // registered slot (re-registering after withdrawal counts as taking one).
-      if (tournament.capacity !== null) {
-        if ((await registeredCount(id)) >= tournament.capacity) {
-          throw new AppError('tournament is full', 409);
-        }
+      // `occupiedPlaces` is the persisted count of players holding a slot.
+      if (tournament.capacity !== null && tournament.occupiedPlaces >= tournament.capacity) {
+        throw new AppError('no empty places left in this tournament', 409);
       }
 
       const registration = existing
@@ -245,6 +256,7 @@ export async function tournamentsRoutes(app: FastifyInstance) {
               .returning()
           )[0];
 
+      await syncOccupiedPlaces(id);
       return reply.code(201).send(registration);
     },
   );
@@ -274,13 +286,15 @@ export async function tournamentsRoutes(app: FastifyInstance) {
     if (!existing || existing.status !== 'registered') {
       throw new AppError('you are not registered for this tournament', 404);
     }
-    return (
+    const withdrawn = (
       await db
         .update(tournamentRegistrations)
         .set({ status: 'withdrawn' })
         .where(eq(tournamentRegistrations.id, existing.id))
         .returning()
     )[0];
+    await syncOccupiedPlaces(id);
+    return withdrawn;
   });
 
   /* ---------------------------------------------------------------- admin -- */
@@ -488,6 +502,7 @@ export async function tournamentsRoutes(app: FastifyInstance) {
               .returning()
           )[0];
 
+      await syncOccupiedPlaces(id);
       return reply.code(201).send(registration);
     },
   );
@@ -514,13 +529,15 @@ export async function tournamentsRoutes(app: FastifyInstance) {
       )[0];
       if (!existing) throw new AppError('registration not found', 404);
 
-      return (
+      const updated = (
         await db
           .update(tournamentRegistrations)
           .set({ status })
           .where(eq(tournamentRegistrations.id, existing.id))
           .returning()
       )[0];
+      await syncOccupiedPlaces(id);
+      return updated;
     },
   );
 
@@ -547,6 +564,7 @@ export async function tournamentsRoutes(app: FastifyInstance) {
       await db
         .delete(tournamentRegistrations)
         .where(eq(tournamentRegistrations.id, existing.id));
+      await syncOccupiedPlaces(id);
       return reply.code(204).send();
     },
   );

@@ -114,6 +114,9 @@ export const tournaments = pgTable('tournaments', {
   bracketInfo: text('bracket_info'),
   // Max number of players. Null means no limit.
   capacity: integer('capacity'),
+  // Denormalized count of players currently holding a slot (status =
+  // registered). Kept in sync with tournament_registrations on every change.
+  occupiedPlaces: integer('occupied_places').notNull().default(0),
   // Optional rating range for eligibility. Null bound means open on that side.
   minRating: integer('min_rating'),
   maxRating: integer('max_rating'),

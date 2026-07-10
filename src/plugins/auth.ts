@@ -22,7 +22,9 @@ declare module 'fastify' {
 }
 
 export default fp(async (app) => {
-  app.register(jwt, { secret: env.JWT_SECRET });
+  // Tokens expire so a leaked one is not a permanent credential. The client
+  // re-logs-in through Google/Apple when it gets a 401.
+  app.register(jwt, { secret: env.JWT_SECRET, sign: { expiresIn: env.JWT_TTL } });
 
   app.decorate('authenticate', async (req: FastifyRequest, reply: FastifyReply) => {
     try {

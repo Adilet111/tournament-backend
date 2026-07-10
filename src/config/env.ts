@@ -9,8 +9,18 @@ const schema = z.object({
   // Postgres. In docker-compose this points at the `db` service.
   DATABASE_URL: z.string().url(),
 
-  // Secret for the session JWTs this API issues.
+  // Secret for the session JWTs this API issues. Use a long random string
+  // (e.g. `openssl rand -base64 48`).
   JWT_SECRET: z.string().min(16),
+
+  // How long a session token stays valid (ms/vercel-style duration string).
+  JWT_TTL: z.string().default('7d'),
+
+  // Comma-separated list of allowed browser origins for CORS, e.g.
+  // "https://app.example.com,https://admin.example.com".
+  // Empty (the default) reflects any origin — fine for development, but set
+  // this in production.
+  CORS_ORIGINS: z.string().default(''),
 
   // Emails granted admin on first sign-in (comma-separated).
   ADMIN_EMAILS: z.string().default(''),
@@ -33,4 +43,8 @@ export const env = parsed.data;
 
 export const adminEmails = env.ADMIN_EMAILS.split(',')
   .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
+export const corsOrigins = env.CORS_ORIGINS.split(',')
+  .map((s) => s.trim())
   .filter(Boolean);

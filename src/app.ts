@@ -1,7 +1,7 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { ZodError } from 'zod';
-import { env } from './config/env';
+import { corsOrigins, env } from './config/env';
 import { AppError } from './lib/errors';
 import authPlugin from './plugins/auth';
 import { authRoutes } from './modules/auth/auth.routes';
@@ -27,10 +27,15 @@ export function buildApp(): FastifyInstance {
 
 
   const app = Fastify({
-    logger:loggerConfig(),
+    logger: loggerConfig(),
   });
 
-  app.register(cors, { origin: true, credentials: true });
+  // Restrict browsers to the configured origins in production; with no
+  // CORS_ORIGINS set (development) any origin is reflected.
+  app.register(cors, {
+    origin: corsOrigins.length > 0 ? corsOrigins : true,
+    credentials: true,
+  });
   app.register(authPlugin);
 
   app.setErrorHandler((err, req, reply) => {
@@ -41,14 +46,18 @@ export function buildApp(): FastifyInstance {
       return reply.code(400).send({ error: 'invalid request', issues: err.issues });
     }
     req.log.error(err);
-    return reply.code(err.statusCode ?? 500).send({ error: 'internal server error' });
+    const statusCode =
+      typeof err === 'object' && err !== null && 'statusCode' in err
+        ? ((err as { statusCode?: number }).statusCode ?? 500)
+        : 500;
+    return reply.code(statusCode).send({ error: 'internal server error' });
   });
 
   // All routes live under /api so nginx can proxy a single prefix and the
   // frontend (served at /) owns everything else. e.g. GET /api/tournaments.
   app.register(
     async (api) => {
-      api.get('/health', async () => ({ status: 'ok3' }));
+      api.get('/health', async () => ({ status: 'ok' }));
 
       // Register module routes here.
       api.register(authRoutes);

@@ -82,6 +82,104 @@ async function syncOccupiedPlaces(tournamentId: string): Promise<number> {
   return value;
 }
 
+// A user's registration row for a tournament, if any (either status).
+async function findRegistration(tournamentId: string, userId: string) {
+  const [row] = await db
+    .select()
+    .from(tournamentRegistrations)
+    .where(
+      and(
+        eq(tournamentRegistrations.tournamentId, tournamentId),
+        eq(tournamentRegistrations.userId, userId),
+      ),
+    )
+    .limit(1);
+  return row;
+}
+
+// A user's profile in a sport, if any.
+async function findSportProfile(userId: string, sportId: string) {
+  const [row] = await db
+    .select()
+    .from(sportProfiles)
+    .where(and(eq(sportProfiles.userId, userId), eq(sportProfiles.sportId, sportId)))
+    .limit(1);
+  return row;
+}
+
+/**
+ * Take (or retake) a slot atomically. Locks the tournament row so two
+ * concurrent registrations can't both pass the capacity check and overbook,
+ * writes the registration, and recomputes `occupiedPlaces` — all in one
+ * transaction.
+ *
+ * `existingId` reactivates that (withdrawn) row instead of inserting.
+ * `enforceCapacity` is on for the player flow; admins bypass the limit.
+ */
+async function registerAtomically(opts: {
+  tournamentId: string;
+  userId: string;
+  existingId?: string;
+  enforceCapacity: boolean;
+}) {
+  return db.transaction(async (tx) => {
+    const [t] = await tx
+      .select()
+      .from(tournaments)
+      .where(eq(tournaments.id, opts.tournamentId))
+      .for('update');
+    if (!t) throw new AppError('tournament not found', 404);
+
+    if (opts.enforceCapacity && t.capacity !== null) {
+      const [row] = await tx
+        .select({ value: count() })
+        .from(tournamentRegistrations)
+        .where(
+          and(
+            eq(tournamentRegistrations.tournamentId, opts.tournamentId),
+            eq(tournamentRegistrations.status, 'registered'),
+          ),
+        );
+      if ((row?.value ?? 0) >= t.capacity) {
+        throw new AppError('no empty places left in this tournament', 409);
+      }
+    }
+
+    const registration = opts.existingId
+      ? (
+          await tx
+            .update(tournamentRegistrations)
+            .set({ status: 'registered' })
+            .where(eq(tournamentRegistrations.id, opts.existingId))
+            .returning()
+        )[0]
+      : (
+          await tx
+            .insert(tournamentRegistrations)
+            .values({ tournamentId: opts.tournamentId, userId: opts.userId })
+            .returning()
+        )[0];
+
+    // Recompute from the source table rather than incrementing, so the value
+    // always converges even if it had drifted.
+    const [fresh] = await tx
+      .select({ value: count() })
+      .from(tournamentRegistrations)
+      .where(
+        and(
+          eq(tournamentRegistrations.tournamentId, opts.tournamentId),
+          eq(tournamentRegistrations.status, 'registered'),
+        ),
+      );
+    await tx
+      .update(tournaments)
+      .set({ occupiedPlaces: fresh?.value ?? 0 })
+      .where(eq(tournaments.id, opts.tournamentId));
+
+    return registration;
+  });
+}
+
 // Slots still open on a tournament: null when it has no capacity limit,
 // otherwise capacity minus the players holding a slot (never negative).
 type Tournament = typeof tournaments.$inferSelect;
@@ -182,30 +280,14 @@ export async function tournamentsRoutes(app: FastifyInstance) {
     '/tournaments/:id/register',
     { preHandler: app.authenticate },
     async (req, reply) => {
-      const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
+      const { id } = parse(idParam, req.params);
 
-      const tournament = (
-        await db.select().from(tournaments).where(eq(tournaments.id, id)).limit(1)
-      )[0];
-      if (!tournament) {
-        throw new AppError('tournament not found', 404);
-      }
+      const tournament = await loadTournamentOr404(id);
       if (tournament.status !== 'open') {
         throw new AppError('tournament is not open for registration', 409);
       }
 
-      const profile = (
-        await db
-          .select()
-          .from(sportProfiles)
-          .where(
-            and(
-              eq(sportProfiles.userId, req.user.sub),
-              eq(sportProfiles.sportId, tournament.sportId),
-            ),
-          )
-          .limit(1)
-      )[0];
+      const profile = await findSportProfile(req.user.sub, tournament.sportId);
       if (!profile) {
         throw new AppError('you need a profile in this sport to register', 403);
       }
@@ -228,45 +310,22 @@ export async function tournamentsRoutes(app: FastifyInstance) {
         }
       }
 
-      const existing = (
-        await db
-          .select()
-          .from(tournamentRegistrations)
-          .where(
-            and(
-              eq(tournamentRegistrations.tournamentId, id),
-              eq(tournamentRegistrations.userId, req.user.sub),
-            ),
-          )
-          .limit(1)
-      )[0];
+      const existing = await findRegistration(id, req.user.sub);
       if (existing && existing.status === 'registered') {
         throw new AppError('you are already registered for this tournament', 409);
       }
 
-      // Capacity gate: only when a limit is set, and only for a new/returning
-      // registered slot (re-registering after withdrawal counts as taking one).
-      // `occupiedPlaces` is the persisted count of players holding a slot.
-      if (tournament.capacity !== null && tournament.occupiedPlaces >= tournament.capacity) {
-        throw new AppError('no empty places left in this tournament', 409);
-      }
+      // Capacity gate (only when a limit is set) + the write happen inside one
+      // transaction with the tournament row locked, so concurrent registrations
+      // for the last slot can't overbook. Re-registering after withdrawal
+      // counts as taking a slot again.
+      const registration = await registerAtomically({
+        tournamentId: id,
+        userId: req.user.sub,
+        existingId: existing?.id,
+        enforceCapacity: true,
+      });
 
-      const registration = existing
-        ? (
-            await db
-              .update(tournamentRegistrations)
-              .set({ status: 'registered' })
-              .where(eq(tournamentRegistrations.id, existing.id))
-              .returning()
-          )[0]
-        : (
-            await db
-              .insert(tournamentRegistrations)
-              .values({ tournamentId: id, userId: req.user.sub })
-              .returning()
-          )[0];
-
-      await syncOccupiedPlaces(id);
       return reply.code(201).send(registration);
     },
   );
@@ -282,18 +341,7 @@ export async function tournamentsRoutes(app: FastifyInstance) {
   // Authenticated player: withdraw yourself from a tournament.
   app.post('/tournaments/:id/withdraw', { preHandler: app.authenticate }, async (req) => {
     const { id } = parse(idParam, req.params);
-    const existing = (
-      await db
-        .select()
-        .from(tournamentRegistrations)
-        .where(
-          and(
-            eq(tournamentRegistrations.tournamentId, id),
-            eq(tournamentRegistrations.userId, req.user.sub),
-          ),
-        )
-        .limit(1)
-    )[0];
+    const existing = await findRegistration(id, req.user.sub);
     if (!existing || existing.status !== 'registered') {
       throw new AppError('you are not registered for this tournament', 404);
     }
@@ -467,54 +515,25 @@ export async function tournamentsRoutes(app: FastifyInstance) {
       )[0];
       if (!user) throw new AppError('user not found', 404);
 
-      const profile = (
-        await db
-          .select()
-          .from(sportProfiles)
-          .where(
-            and(
-              eq(sportProfiles.userId, userId),
-              eq(sportProfiles.sportId, tournament.sportId),
-            ),
-          )
-          .limit(1)
-      )[0];
+      const profile = await findSportProfile(userId, tournament.sportId);
       if (!profile) {
         throw new AppError('this user has no profile in the tournament sport', 400);
       }
 
-      const existing = (
-        await db
-          .select()
-          .from(tournamentRegistrations)
-          .where(
-            and(
-              eq(tournamentRegistrations.tournamentId, id),
-              eq(tournamentRegistrations.userId, userId),
-            ),
-          )
-          .limit(1)
-      )[0];
+      const existing = await findRegistration(id, userId);
       if (existing && existing.status === 'registered') {
         throw new AppError('this user is already registered', 409);
       }
 
-      const registration = existing
-        ? (
-            await db
-              .update(tournamentRegistrations)
-              .set({ status: 'registered' })
-              .where(eq(tournamentRegistrations.id, existing.id))
-              .returning()
-          )[0]
-        : (
-            await db
-              .insert(tournamentRegistrations)
-              .values({ tournamentId: id, userId })
-              .returning()
-          )[0];
+      // Same atomic write as the player flow, minus the capacity gate (admin
+      // override).
+      const registration = await registerAtomically({
+        tournamentId: id,
+        userId,
+        existingId: existing?.id,
+        enforceCapacity: false,
+      });
 
-      await syncOccupiedPlaces(id);
       return reply.code(201).send(registration);
     },
   );
@@ -527,18 +546,7 @@ export async function tournamentsRoutes(app: FastifyInstance) {
       const { id, userId } = parse(regParams, req.params);
       const { status } = parse(registrationStatusBody, req.body);
 
-      const existing = (
-        await db
-          .select()
-          .from(tournamentRegistrations)
-          .where(
-            and(
-              eq(tournamentRegistrations.tournamentId, id),
-              eq(tournamentRegistrations.userId, userId),
-            ),
-          )
-          .limit(1)
-      )[0];
+      const existing = await findRegistration(id, userId);
       if (!existing) throw new AppError('registration not found', 404);
 
       const updated = (
@@ -559,18 +567,7 @@ export async function tournamentsRoutes(app: FastifyInstance) {
     { preHandler: app.requireRole('admin') },
     async (req, reply) => {
       const { id, userId } = parse(regParams, req.params);
-      const existing = (
-        await db
-          .select()
-          .from(tournamentRegistrations)
-          .where(
-            and(
-              eq(tournamentRegistrations.tournamentId, id),
-              eq(tournamentRegistrations.userId, userId),
-            ),
-          )
-          .limit(1)
-      )[0];
+      const existing = await findRegistration(id, userId);
       if (!existing) throw new AppError('registration not found', 404);
 
       await db

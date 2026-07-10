@@ -82,6 +82,15 @@ async function syncOccupiedPlaces(tournamentId: string): Promise<number> {
   return value;
 }
 
+// Slots still open on a tournament: null when it has no capacity limit,
+// otherwise capacity minus the players holding a slot (never negative).
+type Tournament = typeof tournaments.$inferSelect;
+function withFreePlaces<T extends Tournament>(t: T) {
+  const freePlaces =
+    t.capacity === null ? null : Math.max(0, t.capacity - t.occupiedPlaces);
+  return { ...t, freePlaces };
+}
+
 async function loadTournamentOr404(id: string) {
   const t = (
     await db.select().from(tournaments).where(eq(tournaments.id, id)).limit(1)
@@ -117,13 +126,14 @@ const createBody = z
   );
 
 export async function tournamentsRoutes(app: FastifyInstance) {
-  // Public: list open tournaments.
+  // Public: list open tournaments, each with its free-slot count.
   app.get('/tournaments', async () => {
-    return db
+    const rows = await db
       .select()
       .from(tournaments)
       .where(eq(tournaments.status, 'open'))
       .orderBy(desc(tournaments.startsAt));
+    return rows.map(withFreePlaces);
   });
 
   // Admin only: create a tournament.
@@ -266,11 +276,7 @@ export async function tournamentsRoutes(app: FastifyInstance) {
   app.get('/tournaments/:id', async (req) => {
     const { id } = parse(idParam, req.params);
     const tournament = await loadTournamentOr404(id);
-    const freePlaces =
-      tournament.capacity === null
-        ? null
-        : Math.max(0, tournament.capacity - tournament.occupiedPlaces);
-    return { ...tournament, registeredCount: tournament.occupiedPlaces, freePlaces };
+    return { ...withFreePlaces(tournament), registeredCount: tournament.occupiedPlaces };
   });
 
   // Authenticated player: withdraw yourself from a tournament.
@@ -312,11 +318,12 @@ export async function tournamentsRoutes(app: FastifyInstance) {
       }),
       req.query,
     );
-    return db
+    const rows = await db
       .select()
       .from(tournaments)
       .where(status ? eq(tournaments.status, status) : undefined)
       .orderBy(desc(tournaments.createdAt));
+    return rows.map(withFreePlaces);
   });
 
   // Admin: edit a tournament and/or move it through its lifecycle.

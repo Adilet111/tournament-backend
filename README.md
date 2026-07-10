@@ -113,6 +113,32 @@ Full request/response examples with curl live in [`docs/tournament-admin-api.md`
 
 ## TODO before production
 
-1. Implement `verifyToken` in `auth.routes.ts` (Google + Apple signature checks).
+1. Implement       "status": "open",                                                                                                                                                                                                             
+      "createdAt": "2026-07-01T09:30:00.000Z",                                                                                                                                                                                      
+      "freePlaces": 20                                                                                                                                                                                                              
+    },                                                                                                                                                                                                                              
+    {                                                                                                                                                                                                                               
+      "id": "b7c6d5e4-3f2a-4b1c-9d8e-0f1a2b3c4d5e",                                                                                                                                                                                 
+      "sportId": "a1c9e0d2-4b6f-4e88-9a10-2c3d4e5f6a7b",                                                                                                                                                                            
+      "createdBy": "7d8e9f0a-1b2c-4d3e-8f90-a1b2c3d4e5f6",                                                                                                                                                                          
+      "title": "Open Play Ladder",                                                                                                                                                                                                  
+      "description": null,                                                                                                                                                                                                          
+      "type": "free",                                                                                                                                                                                                               
+      "location": "Community Courts",                                                                                                                                                                                               
+      "city": "Astana",                                                                                                                                                                                                             
+      "startsAt": "2026-07-20T10:00:00.000Z",                                                                                                                                                                                       
+      "prizePool": 0,                                                                                                                                                                                                               
+      "entryFee": 0,                                                                                                                                                                                                                
+      "currency": "KZT",                                                                                                                                                                                                            
+      "bracketInfo": null,                                                                                                                                                                                                          
+      "capacity": null,                                                                                                                                                                                                             
+      "occupiedPlaces": 8,                                                                                                                                                                                                          
+      "minRating": null,                                                                                                                                                                                                            
+      "maxRating": null,                                                                                                                                                                                                            
+      "status": "open",                                                                                                                                                                                                             
+      "createdAt": "2026-07-05T12:00:00.000Z",                                                                                                                                                                                      
+      "freePlaces": null                                                                                                                                                                                                            
+    }                                                                                                                                                                                                                               
+  ]    `verifyToken` in `auth.routes.ts` (Google + Apple signature checks).
 2. Add the payment gateway + webhook.
 3. Add a `pg_dump` backup cron (self-hosting means you own backups). 2

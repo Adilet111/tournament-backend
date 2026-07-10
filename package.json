@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json && npm run copy:assets",
-    "copy:assets": "cp -r src/modules/profiles/definitions dist/modules/profiles/definitions",
+    "copy:assets": "rm -rf dist/modules/profiles/definitions && mkdir -p dist/modules/profiles/definitions && cp src/modules/profiles/definitions/*.json dist/modules/profiles/definitions/",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",

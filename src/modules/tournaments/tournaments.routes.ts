@@ -261,11 +261,16 @@ export async function tournamentsRoutes(app: FastifyInstance) {
     },
   );
 
-  // Public: a single tournament with its current registered count.
+  // Public: a single tournament with its current registered count and how many
+  // slots are still free (null when the tournament has no capacity limit).
   app.get('/tournaments/:id', async (req) => {
     const { id } = parse(idParam, req.params);
     const tournament = await loadTournamentOr404(id);
-    return { ...tournament, registeredCount: await registeredCount(id) };
+    const freePlaces =
+      tournament.capacity === null
+        ? null
+        : Math.max(0, tournament.capacity - tournament.occupiedPlaces);
+    return { ...tournament, registeredCount: tournament.occupiedPlaces, freePlaces };
   });
 
   // Authenticated player: withdraw yourself from a tournament.

@@ -356,6 +356,50 @@ export async function tournamentsRoutes(app: FastifyInstance) {
     return withdrawn;
   });
 
+  // Authenticated player: the tournaments you're registered for, split into
+  // `upcoming` (still to happen) and `past` (already played — your match
+  // history). A tournament counts as past when it's completed or its start time
+  // has passed; cancelled tournaments are excluded from both.
+  app.get('/me/tournaments', { preHandler: app.authenticate }, async (req) => {
+    const rows = await db
+      .select({
+        tournament: tournaments,
+        sportName: sports.name,
+        sportSlug: sports.slug,
+        registeredAt: tournamentRegistrations.createdAt,
+      })
+      .from(tournamentRegistrations)
+      .innerJoin(tournaments, eq(tournaments.id, tournamentRegistrations.tournamentId))
+      .innerJoin(sports, eq(sports.id, tournaments.sportId))
+      .where(
+        and(
+          eq(tournamentRegistrations.userId, req.user.sub),
+          eq(tournamentRegistrations.status, 'registered'),
+        ),
+      )
+      .orderBy(desc(tournaments.startsAt));
+
+    const now = new Date();
+    const upcoming: unknown[] = [];
+    const past: unknown[] = [];
+    for (const row of rows) {
+      const t = row.tournament;
+      if (t.status === 'cancelled') continue;
+      const entry = {
+        ...withFreePlaces(t),
+        sportName: row.sportName,
+        sportSlug: row.sportSlug,
+        registeredAt: row.registeredAt,
+      };
+      const isPast = t.status === 'completed' || t.startsAt < now;
+      (isPast ? past : upcoming).push(entry);
+    }
+    // Rows come back newest-first (right for past history); flip `upcoming` so
+    // the soonest tournament leads.
+    upcoming.reverse();
+    return { upcoming, past };
+  });
+
   /* ---------------------------------------------------------------- admin -- */
 
   // Admin: list every tournament (any status), optionally filtered by status.

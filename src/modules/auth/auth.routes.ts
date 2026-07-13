@@ -7,7 +7,7 @@ import { AppError } from '../../lib/errors';
 import { db } from '../../db/client';
 import { authIdentities, users } from '../../db/schema';
 import { adminEmails, env } from '../../config/env';
-import type { SessionRole } from '../../plugins/auth';
+import { AUTH_COOKIE, authCookieOptions, type SessionRole } from '../../plugins/auth';
 
 interface OAuthClaims {
   providerUid: string;
@@ -93,15 +93,25 @@ const loginBody = z.object({
 
 export async function authRoutes(app: FastifyInstance) {
   // The client gets an id token from the Google/Apple SDK and posts it here.
-  app.post('/auth/login', async (req) => {
+  // The session JWT is set as an httpOnly cookie (XSS-safe: JS can't read it).
+  // It is also still returned in the body for older clients that send it as a
+  // Bearer header; the web frontend should ignore it and rely on the cookie.
+  app.post('/auth/login', async (req, reply) => {
     const { provider, idToken } = parse(loginBody, req.body);
     const claims = await verifyToken(provider, idToken);
     const user = await upsertUser(provider, claims);
     const token = app.jwt.sign({ sub: user.id, email: user.email, role: user.role });
+    reply.setCookie(AUTH_COOKIE, token, authCookieOptions());
     return {
       token,
       user: { id: user.id, email: user.email, name: user.name, role: user.role },
     };
+  });
+
+  // Clears the session cookie. Bearer-token clients just discard their token.
+  app.post('/auth/logout', async (_req, reply) => {
+    reply.clearCookie(AUTH_COOKIE, { path: '/' });
+    return { ok: true };
   });
 
   app.get('/auth/me', { preHandler: app.authenticate }, async (req) => {

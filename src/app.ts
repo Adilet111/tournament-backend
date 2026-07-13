@@ -2,7 +2,7 @@ import Fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { ZodError } from 'zod';
 import { corsOrigins, env } from './config/env';
-import { AppError } from './lib/errors';
+import { AppError, codeForStatus } from './lib/errors';
 import authPlugin from './plugins/auth';
 import { authRoutes } from './modules/auth/auth.routes';
 import { competitionsRoutes } from './modules/competitions/competitions.routes';
@@ -38,19 +38,35 @@ export function buildApp(): FastifyInstance {
   });
   app.register(authPlugin);
 
+  // Every error response carries a stable machine-readable `code` alongside
+  // the human-readable `error` message, so the frontend can map codes to
+  // user-friendly / translated messages without string-matching.
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof AppError) {
-      return reply.code(err.statusCode).send({ error: err.message });
+      return reply.code(err.statusCode).send({ error: err.message, code: err.code });
     }
     if (err instanceof ZodError) {
-      return reply.code(400).send({ error: 'invalid request', issues: err.issues });
+      return reply
+        .code(400)
+        .send({ error: 'invalid request', code: 'validation_error', issues: err.issues });
     }
     req.log.error(err);
     const statusCode =
       typeof err === 'object' && err !== null && 'statusCode' in err
         ? ((err as { statusCode?: number }).statusCode ?? 500)
         : 500;
-    return reply.code(statusCode).send({ error: 'internal server error' });
+    return reply
+      .code(statusCode)
+      .send({ error: 'internal server error', code: codeForStatus(statusCode) });
+  });
+
+  // Defense-in-depth headers for API responses. The SPA's own CSP is set by
+  // nginx where the HTML is served; these only cover direct API access.
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    reply.header('Referrer-Policy', 'no-referrer');
   });
 
   // All routes live under /api so nginx can proxy a single prefix and the

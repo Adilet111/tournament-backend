@@ -23,6 +23,9 @@ jobs:
 
       - run: npm run typecheck
 
+      - name: Authorization tests
+        run: npm test
+
   migrations-check:
     name: Migrations up to date
     runs-on: ubuntu-latest

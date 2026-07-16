@@ -10,6 +10,7 @@ import { tournamentsRoutes } from './modules/tournaments/tournaments.routes';
 import { sportsRoutes } from './modules/sports/sports.routes';
 import { profilesRoutes } from './modules/profiles/profiles.routes';
 import { usersRoutes } from './modules/users/users.routes';
+import { citiesRoutes } from './modules/cities/cities.routes';
 
 export function buildApp(): FastifyInstance {
   function loggerConfig() {
@@ -82,6 +83,7 @@ export function buildApp(): FastifyInstance {
       api.register(sportsRoutes);
       api.register(profilesRoutes);
       api.register(usersRoutes);
+      api.register(citiesRoutes);
     },
     { prefix: '/api' },
   );

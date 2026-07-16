@@ -11,8 +11,15 @@ import {
   tournaments,
   users,
 } from '../../db/schema';
+import { isValidCitySlug } from '../../lib/cities';
 
 const idParam = z.object({ id: z.string().uuid() });
+
+// A tournament's city must be one of the canonical Kazakhstan city slugs
+// (see src/lib/cities.ts). Stored as the slug; the frontend localises it.
+const citySlug = z
+  .string()
+  .refine(isValidCitySlug, { message: 'unknown city' });
 const regParams = z.object({ id: z.string().uuid(), userId: z.string().uuid() });
 
 // All fields optional — an admin patches only what changes. `status` moves the
@@ -23,7 +30,7 @@ const updateBody = z
     description: z.string().nullable().optional(),
     type: z.enum(['free', 'paid']).optional(),
     location: z.string().min(1).optional(),
-    city: z.string().nullable().optional(),
+    city: citySlug.nullable().optional(),
     startsAt: z.string().datetime().optional(),
     prizePool: z.number().int().nonnegative().optional(),
     entryFee: z.number().int().nonnegative().optional(),
@@ -204,7 +211,7 @@ const createBody = z
     description: z.string().optional(),
     type: z.enum(['free', 'paid']).default('free'),
     location: z.string().min(1),
-    city: z.string().optional(),
+    city: citySlug.optional(),
     // ISO 8601 datetime, e.g. "2026-07-01T18:00:00Z".
     startsAt: z.string().datetime(),
     prizePool: z.number().int().nonnegative().optional(),
@@ -224,12 +231,22 @@ const createBody = z
   );
 
 export async function tournamentsRoutes(app: FastifyInstance) {
-  // Public: list open tournaments, each with its free-slot count.
-  app.get('/tournaments', async () => {
+  // Public: list open tournaments, each with its free-slot count. Optionally
+  // narrow to a single city with ?city=<slug> (see src/lib/cities.ts).
+  app.get('/tournaments', async (req) => {
+    const { city } = parse(
+      z.object({ city: citySlug.optional() }),
+      req.query,
+    );
     const rows = await db
       .select()
       .from(tournaments)
-      .where(eq(tournaments.status, 'open'))
+      .where(
+        and(
+          eq(tournaments.status, 'open'),
+          city ? eq(tournaments.city, city) : undefined,
+        ),
+      )
       .orderBy(desc(tournaments.startsAt));
     return rows.map(withFreePlaces);
   });

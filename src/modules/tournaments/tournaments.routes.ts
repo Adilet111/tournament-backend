@@ -148,7 +148,7 @@ async function registerAtomically(opts: {
           ),
         );
       if ((row?.value ?? 0) >= t.capacity) {
-        throw new AppError('no empty places left in this tournament', 409);
+        throw new AppError('no empty places left in this tournament', 409, 'tournament_full');
       }
     }
 
@@ -301,35 +301,49 @@ export async function tournamentsRoutes(app: FastifyInstance) {
 
       const tournament = await loadTournamentOr404(id);
       if (tournament.status !== 'open') {
-        throw new AppError('tournament is not open for registration', 409);
+        throw new AppError(
+          'tournament is not open for registration',
+          409,
+          'tournament_not_open',
+        );
       }
 
       const profile = await findSportProfile(req.user.sub, tournament.sportId);
       if (!profile) {
-        throw new AppError('you need a profile in this sport to register', 403);
+        throw new AppError(
+          'you need a profile in this sport to register',
+          403,
+          'no_sport_profile',
+        );
       }
 
       if (tournament.minRating !== null || tournament.maxRating !== null) {
         if (profile.rating === null) {
-          throw new AppError('your profile has no rating yet', 403);
+          throw new AppError('your profile has no rating yet', 403, 'no_rating');
         }
         if (tournament.minRating !== null && profile.rating < tournament.minRating) {
           throw new AppError(
             `your rating must be at least ${tournament.minRating} to register`,
             403,
+            'rating_too_low',
           );
         }
         if (tournament.maxRating !== null && profile.rating > tournament.maxRating) {
           throw new AppError(
             `your rating must be at most ${tournament.maxRating} to register`,
             403,
+            'rating_too_high',
           );
         }
       }
 
       const existing = await findRegistration(id, req.user.sub);
       if (existing && existing.status === 'registered') {
-        throw new AppError('you are already registered for this tournament', 409);
+        throw new AppError(
+          'you are already registered for this tournament',
+          409,
+          'already_registered',
+        );
       }
 
       // Capacity gate (only when a limit is set) + the write happen inside one

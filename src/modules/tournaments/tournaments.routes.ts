@@ -1,10 +1,11 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { and, count, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, inArray } from 'drizzle-orm';
 import { parse } from '../../lib/validate';
 import { AppError } from '../../lib/errors';
 import { db } from '../../db/client';
 import {
+  registrationRemovals,
   sportProfiles,
   sports,
   tournamentRegistrations,
@@ -97,6 +98,76 @@ async function syncOccupiedPlaces(tournamentId: string): Promise<number> {
     .set({ occupiedPlaces: value })
     .where(eq(tournaments.id, tournamentId));
   return value;
+}
+
+// Withdraw every currently-registered player who no longer fits the given age
+// range, and record each removal in `registration_removals` so they can be
+// notified. A player with no birth date can't be verified against the range and
+// is treated as ineligible ('age_unknown'). Returns the removed players (with
+// contact fields) for the response. No-op when the range is fully open.
+async function enforceAgeLimit(tournamentId: string, minAge: number, maxAge: number) {
+  if (!hasAgeBound(minAge, maxAge)) return [];
+
+  const registered = await db
+    .select({
+      regId: tournamentRegistrations.id,
+      userId: users.id,
+      name: users.name,
+      email: users.email,
+      birthDate: users.birthDate,
+    })
+    .from(tournamentRegistrations)
+    .innerJoin(users, eq(users.id, tournamentRegistrations.userId))
+    .where(
+      and(
+        eq(tournamentRegistrations.tournamentId, tournamentId),
+        eq(tournamentRegistrations.status, 'registered'),
+      ),
+    );
+
+  const now = new Date();
+  const removed = registered
+    .map((r) => {
+      if (!r.birthDate) return { ...r, age: null as number | null, reason: 'age_unknown' };
+      const age = ageFromBirthDate(r.birthDate, now);
+      if (age < minAge) return { ...r, age, reason: 'age_too_low' };
+      if (age > maxAge) return { ...r, age, reason: 'age_too_high' };
+      return null;
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+
+  if (removed.length === 0) return [];
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(tournamentRegistrations)
+      .set({ status: 'withdrawn' })
+      .where(
+        inArray(
+          tournamentRegistrations.id,
+          removed.map((r) => r.regId),
+        ),
+      );
+    await tx.insert(registrationRemovals).values(
+      removed.map((r) => ({
+        tournamentId,
+        userId: r.userId,
+        reason: r.reason,
+        age: r.age,
+        minAge,
+        maxAge,
+      })),
+    );
+  });
+  await syncOccupiedPlaces(tournamentId);
+
+  return removed.map(({ userId, name, email, age, reason }) => ({
+    userId,
+    name,
+    email,
+    age,
+    reason,
+  }));
 }
 
 // A user's registration row for a tournament, if any (either status).
@@ -570,9 +641,19 @@ export async function tournamentsRoutes(app: FastifyInstance) {
       throw new AppError('no fields to update', 400);
     }
 
-    return (
+    const updated = (
       await db.update(tournaments).set(set).where(eq(tournaments.id, id)).returning()
     )[0];
+
+    // If the age limit changed, auto-withdraw any registered player who no
+    // longer fits it and queue them for notification. `removed` lists who was
+    // dropped (empty when nothing changed or nobody was affected).
+    const ageChanged = body.minAge !== undefined || body.maxAge !== undefined;
+    const removed = ageChanged
+      ? await enforceAgeLimit(id, effMinAge, effMaxAge)
+      : [];
+
+    return { ...updated, removed };
   });
 
   // Admin: delete a tournament. Only allowed while it has no registrations;
@@ -712,6 +793,73 @@ export async function tournamentsRoutes(app: FastifyInstance) {
         .where(eq(tournamentRegistrations.id, existing.id));
       await syncOccupiedPlaces(id);
       return reply.code(204).send();
+    },
+  );
+
+  // Admin: the notification queue of players auto-removed by an age-limit
+  // change. Defaults to those not yet notified; pass ?notified=true to see all
+  // handled ones, or ?tournamentId= to scope to one tournament. Includes name
+  // and email so you can reach them on whatever channel you use.
+  app.get(
+    '/admin/removed-registrations',
+    { preHandler: app.requireRole('admin') },
+    async (req) => {
+      const { notified, tournamentId } = parse(
+        z.object({
+          notified: z.enum(['true', 'false']).optional(),
+          tournamentId: z.string().uuid().optional(),
+        }),
+        req.query,
+      );
+      // Default view is the pending queue (not yet notified).
+      const notifiedFilter = notified === undefined ? false : notified === 'true';
+
+      return db
+        .select({
+          id: registrationRemovals.id,
+          tournamentId: registrationRemovals.tournamentId,
+          tournamentTitle: tournaments.title,
+          userId: registrationRemovals.userId,
+          name: users.name,
+          email: users.email,
+          reason: registrationRemovals.reason,
+          age: registrationRemovals.age,
+          minAge: registrationRemovals.minAge,
+          maxAge: registrationRemovals.maxAge,
+          notified: registrationRemovals.notified,
+          removedAt: registrationRemovals.removedAt,
+          notifiedAt: registrationRemovals.notifiedAt,
+        })
+        .from(registrationRemovals)
+        .innerJoin(users, eq(users.id, registrationRemovals.userId))
+        .innerJoin(tournaments, eq(tournaments.id, registrationRemovals.tournamentId))
+        .where(
+          and(
+            eq(registrationRemovals.notified, notifiedFilter),
+            tournamentId
+              ? eq(registrationRemovals.tournamentId, tournamentId)
+              : undefined,
+          ),
+        )
+        .orderBy(desc(registrationRemovals.removedAt));
+    },
+  );
+
+  // Admin: mark removal records as notified once you've reached the players.
+  app.post(
+    '/admin/removed-registrations/mark-notified',
+    { preHandler: app.requireRole('admin') },
+    async (req) => {
+      const { ids } = parse(
+        z.object({ ids: z.array(z.string().uuid()).min(1) }),
+        req.body,
+      );
+      const updated = await db
+        .update(registrationRemovals)
+        .set({ notified: true, notifiedAt: new Date() })
+        .where(inArray(registrationRemovals.id, ids))
+        .returning({ id: registrationRemovals.id });
+      return { notified: updated.length };
     },
   );
 }

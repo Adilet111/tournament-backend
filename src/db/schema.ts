@@ -1,4 +1,4 @@
-import { pgEnum, pgTable, text, timestamp, uuid, integer, jsonb, unique, date } from 'drizzle-orm/pg-core';
+import { pgEnum, pgTable, text, timestamp, uuid, integer, jsonb, unique, date, boolean } from 'drizzle-orm/pg-core';
 
 /**
  * Core tables to get you running. Extend with the rest of the model following
@@ -155,6 +155,31 @@ export const tournamentRegistrations = pgTable(
     ),
   }),
 );
+
+/**
+ * Audit + notification queue for players auto-removed from a tournament when an
+ * admin tightened its age limit below their eligibility. One row per removal;
+ * `notified` flips to true once they've been contacted (e.g. via a social
+ * network). The `age`/`minAge`/`maxAge` snapshot lets the message explain why.
+ */
+export const registrationRemovals = pgTable('registration_removals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tournamentId: uuid('tournament_id')
+    .notNull()
+    .references(() => tournaments.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  // Why removed: 'age_too_low' | 'age_too_high' | 'age_unknown' (no birth date).
+  reason: text('reason').notNull(),
+  // Snapshot at removal time. `age` is null when the birth date is unknown.
+  age: integer('age'),
+  minAge: integer('min_age').notNull(),
+  maxAge: integer('max_age').notNull(),
+  notified: boolean('notified').notNull().default(false),
+  removedAt: timestamp('removed_at', { withTimezone: true }).notNull().defaultNow(),
+  notifiedAt: timestamp('notified_at', { withTimezone: true }),
+});
 
 export const competitions = pgTable('competitions', {
   id: uuid('id').primaryKey().defaultRandom(),

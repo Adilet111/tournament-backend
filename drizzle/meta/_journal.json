@@ -50,6 +50,13 @@
       "when": 1784198292985,
       "tag": "0006_powerful_dark_phoenix",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784201400166,
+      "tag": "0007_nice_pixie",
+      "breakpoints": true
     }
   ]
 }

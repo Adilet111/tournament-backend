@@ -8,6 +8,7 @@ import { db } from '../../db/client';
 import { authIdentities, users } from '../../db/schema';
 import { adminEmails, env } from '../../config/env';
 import { AUTH_COOKIE, authCookieOptions, type SessionRole } from '../../plugins/auth';
+import { birthDateSchema } from '../../lib/eligibility';
 
 interface OAuthClaims {
   providerUid: string;
@@ -57,8 +58,14 @@ async function verifyToken(
 }
 
 // Find or create the user for an OAuth identity; first admin-listed email
-// becomes an admin (that's how "me by default" works).
-async function upsertUser(provider: 'google' | 'apple', claims: OAuthClaims) {
+// becomes an admin (that's how "me by default" works). `birthDate` (collected
+// by the frontend on the sign-up screen) is stored on first user creation and
+// back-filled if the user has none yet — never overwritten once set.
+async function upsertUser(
+  provider: 'google' | 'apple',
+  claims: OAuthClaims,
+  birthDate?: string,
+) {
   const identity = await db
     .select()
     .from(authIdentities)
@@ -71,14 +78,29 @@ async function upsertUser(provider: 'google' | 'apple', claims: OAuthClaims) {
     .limit(1);
 
   if (identity[0]) {
-    return (await db.select().from(users).where(eq(users.id, identity[0].userId)).limit(1))[0];
+    let user = (
+      await db.select().from(users).where(eq(users.id, identity[0].userId)).limit(1)
+    )[0];
+    // Back-fill birth date for a returning user who never provided one.
+    if (user && !user.birthDate && birthDate) {
+      user = (
+        await db.update(users).set({ birthDate }).where(eq(users.id, user.id)).returning()
+      )[0];
+    }
+    return user;
   }
 
   const email = claims.email.toLowerCase();
   let user = (await db.select().from(users).where(eq(users.email, email)).limit(1))[0];
   if (!user) {
     const role: SessionRole = adminEmails.includes(email) ? 'admin' : 'player';
-    user = (await db.insert(users).values({ email, name: claims.name, role }).returning())[0];
+    user = (
+      await db.insert(users).values({ email, name: claims.name, role, birthDate }).returning()
+    )[0];
+  } else if (!user.birthDate && birthDate) {
+    user = (
+      await db.update(users).set({ birthDate }).where(eq(users.id, user.id)).returning()
+    )[0];
   }
   await db
     .insert(authIdentities)
@@ -89,6 +111,9 @@ async function upsertUser(provider: 'google' | 'apple', claims: OAuthClaims) {
 const loginBody = z.object({
   provider: z.enum(['google', 'apple']),
   idToken: z.string().min(10),
+  // Optional: the frontend collects it on the sign-up screen (Google doesn't
+  // return it). Required in practice to join age-restricted tournaments later.
+  birthDate: birthDateSchema.optional(),
 });
 
 export async function authRoutes(app: FastifyInstance) {
@@ -97,14 +122,20 @@ export async function authRoutes(app: FastifyInstance) {
   // It is also still returned in the body for older clients that send it as a
   // Bearer header; the web frontend should ignore it and rely on the cookie.
   app.post('/auth/login', async (req, reply) => {
-    const { provider, idToken } = parse(loginBody, req.body);
+    const { provider, idToken, birthDate } = parse(loginBody, req.body);
     const claims = await verifyToken(provider, idToken);
-    const user = await upsertUser(provider, claims);
+    const user = await upsertUser(provider, claims, birthDate);
     const token = app.jwt.sign({ sub: user.id, email: user.email, role: user.role });
     reply.setCookie(AUTH_COOKIE, token, authCookieOptions());
     return {
       token,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        birthDate: user.birthDate,
+      },
     };
   });
 

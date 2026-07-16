@@ -12,6 +12,15 @@ import {
   users,
 } from '../../db/schema';
 import { isValidCitySlug } from '../../lib/cities';
+import {
+  AGE_OPEN_MAX,
+  AGE_OPEN_MIN,
+  RATING_OPEN_MAX,
+  RATING_OPEN_MIN,
+  ageFromBirthDate,
+  hasAgeBound,
+  hasRatingBound,
+} from '../../lib/eligibility';
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -37,18 +46,19 @@ const updateBody = z
     currency: z.string().optional(),
     bracketInfo: z.string().nullable().optional(),
     capacity: z.number().int().positive().nullable().optional(),
-    minRating: z.number().int().nonnegative().nullable().optional(),
-    maxRating: z.number().int().nonnegative().nullable().optional(),
+    minRating: z.number().int().nonnegative().optional(),
+    maxRating: z.number().int().nonnegative().optional(),
+    minAge: z.number().int().nonnegative().optional(),
+    maxAge: z.number().int().nonnegative().optional(),
     status: z.enum(['draft', 'open', 'closed', 'completed', 'cancelled']).optional(),
   })
   .refine(
-    (b) =>
-      b.minRating === undefined ||
-      b.maxRating === undefined ||
-      b.minRating === null ||
-      b.maxRating === null ||
-      b.minRating <= b.maxRating,
+    (b) => b.minRating === undefined || b.maxRating === undefined || b.minRating <= b.maxRating,
     { message: 'minRating must be <= maxRating', path: ['minRating'] },
+  )
+  .refine(
+    (b) => b.minAge === undefined || b.maxAge === undefined || b.minAge <= b.maxAge,
+    { message: 'minAge must be <= maxAge', path: ['minAge'] },
   );
 
 const addParticipantBody = z.object({ userId: z.string().uuid() });
@@ -220,15 +230,22 @@ const createBody = z
     bracketInfo: z.string().optional(),
     // Omit for no limit.
     capacity: z.number().int().positive().optional(),
-    // Optional rating range. When omitted, anyone with a profile in the sport
-    // can register. Omit either bound to leave that side open.
-    minRating: z.number().int().nonnegative().optional(),
-    maxRating: z.number().int().nonnegative().optional(),
+    // Inclusive rating range. Defaults span the full range, so omitting both
+    // lets anyone with a profile in the sport register.
+    minRating: z.number().int().nonnegative().default(RATING_OPEN_MIN),
+    maxRating: z.number().int().nonnegative().default(RATING_OPEN_MAX),
+    // Inclusive age range. Defaults mean no age restriction.
+    minAge: z.number().int().nonnegative().default(AGE_OPEN_MIN),
+    maxAge: z.number().int().nonnegative().default(AGE_OPEN_MAX),
   })
-  .refine(
-    (b) => b.minRating === undefined || b.maxRating === undefined || b.minRating <= b.maxRating,
-    { message: 'minRating must be <= maxRating', path: ['minRating'] },
-  );
+  .refine((b) => b.minRating <= b.maxRating, {
+    message: 'minRating must be <= maxRating',
+    path: ['minRating'],
+  })
+  .refine((b) => b.minAge <= b.maxAge, {
+    message: 'minAge must be <= maxAge',
+    path: ['minAge'],
+  });
 
 export async function tournamentsRoutes(app: FastifyInstance) {
   // Public: list open tournaments, each with its free-slot count. Optionally
@@ -282,8 +299,10 @@ export async function tournamentsRoutes(app: FastifyInstance) {
           currency: body.currency ?? 'KZT',
           bracketInfo: body.bracketInfo,
           capacity: body.capacity ?? null,
-          minRating: body.minRating ?? null,
-          maxRating: body.maxRating ?? null,
+          minRating: body.minRating,
+          maxRating: body.maxRating,
+          minAge: body.minAge,
+          maxAge: body.maxAge,
           status: 'open',
         })
         .returning()
@@ -317,22 +336,58 @@ export async function tournamentsRoutes(app: FastifyInstance) {
         );
       }
 
-      if (tournament.minRating !== null || tournament.maxRating !== null) {
+      // Rating gate. Bounds default to the full range, so a tournament without
+      // a real bound accepts any rating (including an unrated profile).
+      if (hasRatingBound(tournament.minRating, tournament.maxRating)) {
         if (profile.rating === null) {
           throw new AppError('your profile has no rating yet', 403, 'no_rating');
         }
-        if (tournament.minRating !== null && profile.rating < tournament.minRating) {
+        if (profile.rating < tournament.minRating) {
           throw new AppError(
             `your rating must be at least ${tournament.minRating} to register`,
             403,
             'rating_too_low',
           );
         }
-        if (tournament.maxRating !== null && profile.rating > tournament.maxRating) {
+        if (profile.rating > tournament.maxRating) {
           throw new AppError(
             `your rating must be at most ${tournament.maxRating} to register`,
             403,
             'rating_too_high',
+          );
+        }
+      }
+
+      // Age gate. Only enforced when the tournament sets a real age bound; the
+      // player's birth date is captured at Google sign-in.
+      if (hasAgeBound(tournament.minAge, tournament.maxAge)) {
+        const player = (
+          await db
+            .select({ birthDate: users.birthDate })
+            .from(users)
+            .where(eq(users.id, req.user.sub))
+            .limit(1)
+        )[0];
+        if (!player?.birthDate) {
+          throw new AppError(
+            'you must set your birth date to register for this tournament',
+            403,
+            'birthdate_required',
+          );
+        }
+        const age = ageFromBirthDate(player.birthDate, new Date());
+        if (age < tournament.minAge) {
+          throw new AppError(
+            `you must be at least ${tournament.minAge} years old to register`,
+            403,
+            'age_too_low',
+          );
+        }
+        if (age > tournament.maxAge) {
+          throw new AppError(
+            `you must be at most ${tournament.maxAge} years old to register`,
+            403,
+            'age_too_high',
           );
         }
       }
@@ -472,10 +527,15 @@ export async function tournamentsRoutes(app: FastifyInstance) {
     if (effType === 'paid' && (!effEntryFee || effEntryFee <= 0)) {
       throw new AppError('paid tournaments need a positive entryFee', 400);
     }
-    const effMin = body.minRating !== undefined ? body.minRating : tournament.minRating;
-    const effMax = body.maxRating !== undefined ? body.maxRating : tournament.maxRating;
-    if (effMin !== null && effMax !== null && effMin > effMax) {
+    const effMin = body.minRating ?? tournament.minRating;
+    const effMax = body.maxRating ?? tournament.maxRating;
+    if (effMin > effMax) {
       throw new AppError('minRating must be <= maxRating', 400);
+    }
+    const effMinAge = body.minAge ?? tournament.minAge;
+    const effMaxAge = body.maxAge ?? tournament.maxAge;
+    if (effMinAge > effMaxAge) {
+      throw new AppError('minAge must be <= maxAge', 400);
     }
     // Never shrink capacity below the players already registered.
     if (body.capacity !== undefined && body.capacity !== null) {
@@ -502,6 +562,8 @@ export async function tournamentsRoutes(app: FastifyInstance) {
     if (body.capacity !== undefined) set.capacity = body.capacity;
     if (body.minRating !== undefined) set.minRating = body.minRating;
     if (body.maxRating !== undefined) set.maxRating = body.maxRating;
+    if (body.minAge !== undefined) set.minAge = body.minAge;
+    if (body.maxAge !== undefined) set.maxAge = body.maxAge;
     if (body.status !== undefined) set.status = body.status;
     if (effType === 'free') set.entryFee = 0; // free tournaments never carry a fee
     if (Object.keys(set).length === 0) {

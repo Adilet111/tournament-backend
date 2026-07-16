@@ -1,4 +1,4 @@
-import { pgEnum, pgTable, text, timestamp, uuid, integer, jsonb, unique } from 'drizzle-orm/pg-core';
+import { pgEnum, pgTable, text, timestamp, uuid, integer, jsonb, unique, date } from 'drizzle-orm/pg-core';
 
 /**
  * Core tables to get you running. Extend with the rest of the model following
@@ -34,6 +34,10 @@ export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: text('email').notNull().unique(),
   name: text('name'),
+  // Date-only (YYYY-MM-DD), captured at Google sign-in. Nullable: pre-existing
+  // users and anyone who signed in before providing it won't have one, which
+  // blocks registering for age-restricted tournaments until they set it.
+  birthDate: date('birth_date'),
   role: roleEnum('role').notNull().default('player'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -117,9 +121,13 @@ export const tournaments = pgTable('tournaments', {
   // Denormalized count of players currently holding a slot (status =
   // registered). Kept in sync with tournament_registrations on every change.
   occupiedPlaces: integer('occupied_places').notNull().default(0),
-  // Optional rating range for eligibility. Null bound means open on that side.
-  minRating: integer('min_rating'),
-  maxRating: integer('max_rating'),
+  // Inclusive rating range for eligibility. Defaults span the full range
+  // (0..100000) so an unbounded tournament lets anyone in. See src/lib/eligibility.ts.
+  minRating: integer('min_rating').notNull().default(0),
+  maxRating: integer('max_rating').notNull().default(100000),
+  // Inclusive age range for eligibility. Defaults (0..120) mean no restriction.
+  minAge: integer('min_age').notNull().default(0),
+  maxAge: integer('max_age').notNull().default(120),
   status: tournamentStatusEnum('status').notNull().default('open'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

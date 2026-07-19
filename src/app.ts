@@ -11,6 +11,9 @@ import { sportsRoutes } from './modules/sports/sports.routes';
 import { profilesRoutes } from './modules/profiles/profiles.routes';
 import { usersRoutes } from './modules/users/users.routes';
 import { citiesRoutes } from './modules/cities/cities.routes';
+import { teamsRoutes } from './modules/teams/teams.routes';
+import { matchesRoutes } from './modules/matches/matches.routes';
+import { statsRoutes } from './modules/stats/stats.routes';
 
 export function buildApp(): FastifyInstance {
   function loggerConfig() {
@@ -84,6 +87,9 @@ export function buildApp(): FastifyInstance {
       api.register(profilesRoutes);
       api.register(usersRoutes);
       api.register(citiesRoutes);
+      api.register(teamsRoutes);
+      api.register(matchesRoutes);
+      api.register(statsRoutes);
     },
     { prefix: '/api' },
   );

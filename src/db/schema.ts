@@ -1,4 +1,16 @@
-import { pgEnum, pgTable, text, timestamp, uuid, integer, jsonb, unique, date, boolean } from 'drizzle-orm/pg-core';
+import {
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  integer,
+  jsonb,
+  unique,
+  date,
+  boolean,
+  type AnyPgColumn,
+} from 'drizzle-orm/pg-core';
 
 /**
  * Core tables to get you running. Extend with the rest of the model following
@@ -29,6 +41,20 @@ export const registrationStatusEnum = pgEnum('registration_status', [
   'registered',
   'withdrawn',
 ]);
+// Whether a tournament is played 1v1 (solo) or between teams.
+export const participantTypeEnum = pgEnum('participant_type', ['solo', 'team']);
+export const teamMemberRoleEnum = pgEnum('team_member_role', ['captain', 'member']);
+// 'invited'/'declined' are reserved for a future direct-invite flow; today the
+// only way in is the invite link, which creates members as 'active' directly.
+export const teamMemberStatusEnum = pgEnum('team_member_status', [
+  'invited',
+  'active',
+  'declined',
+  'left',
+  'removed',
+]);
+export const matchStatusEnum = pgEnum('match_status', ['pending', 'completed', 'walkover']);
+export const matchOutcomeEnum = pgEnum('match_outcome', ['win', 'loss', 'draw']);
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -116,7 +142,13 @@ export const tournaments = pgTable('tournaments', {
   entryFee: integer('entry_fee').notNull().default(0),
   currency: text('currency').notNull().default('KZT'),
   bracketInfo: text('bracket_info'),
-  // Max number of players. Null means no limit.
+  // solo = 1v1 tournament (players register themselves), team = teams register.
+  // CHECK (hand-written in migration): (participant_type = 'team') = (team_size IS NOT NULL).
+  participantType: participantTypeEnum('participant_type').notNull().default('solo'),
+  // Roster size a team must field at registration. Null for solo tournaments.
+  teamSize: integer('team_size'),
+  // Max number of competing units (players for solo, teams for team
+  // tournaments). Null means no limit.
   capacity: integer('capacity'),
   // Denormalized count of players currently holding a slot (status =
   // registered). Kept in sync with tournament_registrations on every change.
@@ -131,6 +163,52 @@ export const tournaments = pgTable('tournaments', {
   status: tournamentStatusEnum('status').notNull().default('open'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * A persistent team, scoped to one sport. A user may belong to any number of
+ * teams (even within one sport) — exclusivity is enforced per tournament via
+ * the roster snapshot, not here. Joining is by invite link only: anyone who
+ * has `inviteToken` may join, so the captain shares (and can rotate) the link.
+ */
+export const teams = pgTable(
+  'teams',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sportId: uuid('sport_id')
+      .notNull()
+      .references(() => sports.id),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    name: text('name').notNull(),
+    logoUrl: text('logo_url'),
+    // Random secret in the join URL. Rotating it invalidates old links.
+    inviteToken: text('invite_token').notNull().unique(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    sportNameUnique: unique('teams_sport_name_unique').on(t.sportId, t.name),
+  }),
+);
+
+export const teamMembers = pgTable(
+  'team_members',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: teamMemberRoleEnum('role').notNull().default('member'),
+    status: teamMemberStatusEnum('status').notNull().default('active'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    teamUserUnique: unique('team_members_team_user_unique').on(t.teamId, t.userId),
+  }),
+);
 
 /**
  * A player's registration for a tournament. One row per (tournament, user).
@@ -153,6 +231,137 @@ export const tournamentRegistrations = pgTable(
       t.tournamentId,
       t.userId,
     ),
+  }),
+);
+
+/**
+ * A team's registration for a team tournament. One row per (tournament, team),
+ * written by the captain through the same locked-transaction pattern as solo
+ * registrations so capacity can't be overbooked.
+ */
+export const tournamentTeamRegistrations = pgTable(
+  'tournament_team_registrations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tournamentId: uuid('tournament_id')
+      .notNull()
+      .references(() => tournaments.id, { onDelete: 'cascade' }),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    status: registrationStatusEnum('status').notNull().default('registered'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tournamentTeamUnique: unique('ttr_tournament_team_unique').on(t.tournamentId, t.teamId),
+  }),
+);
+
+/**
+ * The roster snapshot frozen at team registration. Later team_members changes
+ * never affect a registered tournament; stats and eligibility read this table.
+ * UQ (tournament_id, user_id) is THE rule that stops one person entering the
+ * same tournament twice via different teams (tournament_id is denormalized
+ * from the registration precisely to make that constraint possible). Rows are
+ * deleted when the team withdraws, freeing the players for another team.
+ */
+export const tournamentTeamRegistrationMembers = pgTable(
+  'tournament_team_registration_members',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    registrationId: uuid('registration_id')
+      .notNull()
+      .references(() => tournamentTeamRegistrations.id, { onDelete: 'cascade' }),
+    tournamentId: uuid('tournament_id')
+      .notNull()
+      .references(() => tournaments.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+  },
+  (t) => ({
+    tournamentUserUnique: unique('ttr_members_tournament_user_unique').on(
+      t.tournamentId,
+      t.userId,
+    ),
+  }),
+);
+
+/**
+ * One competitor slot in a tournament's bracket, hiding solo vs team: exactly
+ * one of registrationId / teamRegistrationId is set (hand-written CHECK).
+ * Bracket and match code reference entries only. `displayName` is frozen at
+ * bracket generation so renames don't rewrite history.
+ */
+export const tournamentEntries = pgTable('tournament_entries', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tournamentId: uuid('tournament_id')
+    .notNull()
+    .references(() => tournaments.id, { onDelete: 'cascade' }),
+  registrationId: uuid('registration_id')
+    .unique()
+    .references(() => tournamentRegistrations.id, { onDelete: 'cascade' }),
+  teamRegistrationId: uuid('team_registration_id')
+    .unique()
+    .references(() => tournamentTeamRegistrations.id, { onDelete: 'cascade' }),
+  displayName: text('display_name').notNull(),
+  // 1 = strongest. Assigned at bracket generation (by rating, nulls last).
+  seed: integer('seed'),
+  // Filled as the bracket resolves: 1 = champion, 2 = runner-up, etc.
+  finalRank: integer('final_rank'),
+});
+
+/**
+ * The whole single-elimination bracket is created up front. `round` 1 is the
+ * first round; `position` is 0-based within the round. Winners advance to
+ * `nextMatchId` slot `nextMatchSlot` (null next match = the final). Byes are
+ * matches resolved immediately as 'walkover'.
+ */
+export const matches = pgTable(
+  'matches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tournamentId: uuid('tournament_id')
+      .notNull()
+      .references(() => tournaments.id, { onDelete: 'cascade' }),
+    round: integer('round').notNull(),
+    position: integer('position').notNull(),
+    nextMatchId: uuid('next_match_id').references((): AnyPgColumn => matches.id),
+    nextMatchSlot: integer('next_match_slot'),
+    status: matchStatusEnum('status').notNull().default('pending'),
+    playedAt: timestamp('played_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    bracketSlotUnique: unique('matches_tournament_round_position_unique').on(
+      t.tournamentId,
+      t.round,
+      t.position,
+    ),
+  }),
+);
+
+/**
+ * The 0–2 sides of a match. Rows appear as slots resolve (first round at
+ * bracket generation, later rounds as winners advance).
+ */
+export const matchParticipants = pgTable(
+  'match_participants',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    matchId: uuid('match_id')
+      .notNull()
+      .references(() => matches.id, { onDelete: 'cascade' }),
+    entryId: uuid('entry_id')
+      .notNull()
+      .references(() => tournamentEntries.id, { onDelete: 'cascade' }),
+    slot: integer('slot').notNull(),
+    score: integer('score'),
+    outcome: matchOutcomeEnum('outcome'),
+  },
+  (t) => ({
+    matchSlotUnique: unique('match_participants_match_slot_unique').on(t.matchId, t.slot),
+    matchEntryUnique: unique('match_participants_match_entry_unique').on(t.matchId, t.entryId),
   }),
 );
 

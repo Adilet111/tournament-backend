@@ -51,6 +51,26 @@ the app and `app.inject()` or curl `/api/health`.
   by design.
 - Status lifecycles are enforced via `ALLOWED_TRANSITIONS`
   (draft→open→closed→completed, cancel from any active state).
+- **Solo vs team**: `tournaments.participantType` ('solo' | 'team') is immutable
+  after creation; team tournaments require `teamSize` (DB CHECK). Solo
+  registration routes 409 on team tournaments and vice versa.
+- **Teams** (`teams.routes.ts`): joining is by invite link only
+  (`POST /teams/join/:token`; captain gets/rotates the token). A user may be in
+  many teams. Captain-only: invite link, roster removal (a ban — `removed`
+  members can't rejoin), captaincy transfer, team registration, deletion.
+- **Team registration** freezes a roster snapshot in
+  `tournament_team_registration_members`; its UQ `(tournament_id, user_id)` is
+  the race-proof rule that one person can't enter a tournament via two teams
+  (friendly pre-check first, 23505 mapped to 409). Withdrawal deletes the
+  snapshot, freeing the players. `occupiedPlaces` counts units (players or teams).
+- **Bracket** (`matches.routes.ts`): whole single-elim bracket generated up
+  front on a `closed` tournament from `tournament_entries` (XOR CHECK: solo
+  registration or team registration), seeded by rating, byes = walkovers that
+  auto-advance. Match results advance winners via `next_match_id`/slot and set
+  `final_rank` (1 = champion). Deleting a bracket is blocked once a match
+  completed; team withdrawal is blocked once entries exist.
+- **Stats** (`stats.routes.ts`) are fully derived from entries +
+  match_participants at request time — no stored aggregates to keep in sync.
 - Admin role is granted at **first sign-in** to emails in `ADMIN_EMAILS`.
   Role lives in the JWT, so role changes need a re-login.
 

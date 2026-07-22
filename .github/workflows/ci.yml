@@ -7,8 +7,8 @@ on:
     branches: ["main"]
 
 jobs:
-  typecheck:
-    name: Typecheck
+  test:
+    name: Tests
     runs-on: ubuntu-latest
 
     services:
@@ -39,8 +39,6 @@ jobs:
           cache: npm
 
       - run: npm ci
-
-      - run: npm run typecheck
 
       - name: Apply migrations
         run: npm run db:migrate

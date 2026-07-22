@@ -100,7 +100,7 @@
       }
     ]
   },
-  "divisionLabels": ["IV", "III", "II", "I"],
+  "divisionLabels": ["I", "II", "III", "IV"],
   "tiers": [
     { "name": "Iron", "min": 1000, "max": 1200, "divisions": 4, "openLeaderboard": false },
     { "name": "Bronze", "min": 1200, "max": 1500, "divisions": 4, "openLeaderboard": false },

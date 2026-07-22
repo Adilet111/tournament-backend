@@ -165,4 +165,23 @@ export async function profilesRoutes(app: FastifyInstance) {
 
   app.get('/profiles/:slug', { preHandler: app.authenticate }, getProfileHandler);
   app.get('/sports/:slug/profile', { preHandler: app.authenticate }, getProfileHandler);
+
+  // Public: the tier/division config for a sport, so the frontend can compute
+  // "tier + division + LP" from a raw rating locally (e.g. to render a live
+  // preview while a user drags a slider) without hardcoding numbers that could
+  // drift from the *.profile.json. Tier/division names are never localized.
+  app.get('/sports/:slug/tiers', async (req) => {
+    const { slug } = parse(slugParam, req.params);
+    const profile = getProfile(slug);
+    if (!profile) {
+      throw new AppError('this sport has no profile questionnaire yet', 404);
+    }
+    return {
+      sport: slug,
+      constants: profile.onboarding.constants,
+      tiers: profile.tiers,
+      divisionLabels: profile.divisionLabels,
+      lpScale: profile.lpScale,
+    };
+  });
 }

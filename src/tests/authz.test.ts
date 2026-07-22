@@ -32,6 +32,7 @@ const ADMIN_ENDPOINTS: [string, string][] = [
   ['DELETE', `/api/tournaments/${SOME_UUID}/registrations/${SOME_UUID}`],
   ['POST', '/api/sports'],
   ['GET', `/api/admin/users/${SOME_UUID}`],
+  ['POST', `/api/admin/users/${SOME_UUID}/sports/football/rating/adjust`],
 ];
 
 // Authenticated (non-admin) endpoints: must 401 without a token.

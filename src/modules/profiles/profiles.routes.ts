@@ -4,10 +4,12 @@ import { and, eq } from 'drizzle-orm';
 import { parse } from '../../lib/validate';
 import { AppError } from '../../lib/errors';
 import { db } from '../../db/client';
-import { sportProfiles, sports } from '../../db/schema';
-import { registry, getProfile, score, Profile, Question } from './rating';
+import { sportProfiles, sports, users } from '../../db/schema';
+import { registry, getProfile, score, place, clamp, Profile, Question } from './rating';
 
 const slugParam = z.object({ slug: z.string().min(1) });
+const userSportParams = z.object({ userId: z.string().uuid(), slug: z.string().min(1) });
+const adjustRatingBody = z.object({ delta: z.number().int() });
 
 // Onboarding answers are a flat map of questionId -> chosen option value.
 const answersRecord = z.record(z.string(), z.string());
@@ -184,4 +186,65 @@ export async function profilesRoutes(app: FastifyInstance) {
       lpScale: profile.lpScale,
     };
   });
+
+  // Admin: manually adjust a user's rating for one sport by a signed delta
+  // (e.g. +25 or -25), for corrections or penalties outside normal match play.
+  // Clamped to the sport's FLOOR/CAP, same bounds as onboarding and match play.
+  app.post(
+    '/admin/users/:userId/sports/:slug/rating/adjust',
+    { preHandler: app.requireRole('admin') },
+    async (req) => {
+      const { userId, slug } = parse(userSportParams, req.params);
+      const { delta } = parse(adjustRatingBody, req.body);
+
+      const definition = getProfile(slug);
+      if (!definition) {
+        throw new AppError('this sport has no profile questionnaire yet', 404);
+      }
+
+      const user = (
+        await db.select({ id: users.id }).from(users).where(eq(users.id, userId)).limit(1)
+      )[0];
+      if (!user) {
+        throw new AppError('user not found', 404);
+      }
+
+      const sport = (
+        await db.select().from(sports).where(eq(sports.slug, slug)).limit(1)
+      )[0];
+      if (!sport) {
+        throw new AppError('sport not found', 404);
+      }
+
+      const existing = (
+        await db
+          .select()
+          .from(sportProfiles)
+          .where(and(eq(sportProfiles.userId, userId), eq(sportProfiles.sportId, sport.id)))
+          .limit(1)
+      )[0];
+      if (!existing) {
+        throw new AppError('this user has no profile in this sport', 404);
+      }
+
+      const { FLOOR, CAP } = definition.onboarding.constants;
+      const oldRating = existing.rating ?? FLOOR;
+      const newRating = clamp(oldRating + delta, FLOOR, CAP);
+
+      const updated = (
+        await db
+          .update(sportProfiles)
+          .set({ rating: newRating, updatedAt: new Date() })
+          .where(eq(sportProfiles.id, existing.id))
+          .returning()
+      )[0];
+
+      req.log.info(
+        { userId, sportSlug: slug, delta, oldRating, newRating, byAdmin: req.user.sub },
+        'admin adjusted rating',
+      );
+
+      return { ...updated, placement: place(definition, newRating) };
+    },
+  );
 }

@@ -23,6 +23,8 @@ export interface Option {
   points?: number; // for anchor / additive
   factor?: number; // for rustMultiplier
   label?: string;
+  /** Russian translation of `label`. Falls back to `label` when absent. */
+  labelRu?: string;
 }
 
 export type QuestionRole =
@@ -36,6 +38,8 @@ export interface Question {
   role: QuestionRole;
   /** Human prompt for the frontend (not used by scoring). */
   prompt?: string;
+  /** Russian translation of `prompt`. Falls back to `prompt` when absent. */
+  promptRu?: string;
   appliesBeforeRust?: boolean;
   affectsRating?: boolean;
   options: Option[];
@@ -58,6 +62,8 @@ export interface Profile {
   schemaVersion: string;
   sport: string;
   displayName: string;
+  /** Russian translation of `displayName`. Falls back to `displayName` when absent. */
+  displayNameRu?: string;
   archetype: string; // team | solo_1v1 | combat_weightclass | timed
   onboarding: Onboarding;
   tiers: Tier[];

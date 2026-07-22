@@ -12,38 +12,66 @@ const slugParam = z.object({ slug: z.string().min(1) });
 // Onboarding answers are a flat map of questionId -> chosen option value.
 const answersRecord = z.record(z.string(), z.string());
 
+type Lang = 'en' | 'ru';
+
+// Questionnaire text (prompts/labels/displayName) is localized; the computed
+// results (rating, tier/division names like "Bronze III") are not — those
+// come from the *.profile.json `tiers`/`divisionLabels` and stay in English.
+// Default is Russian: with no Accept-Language header (or one that doesn't
+// mention "ru"), Russian is shown unless the header names another language.
+function pickLang(acceptLanguage: string | undefined): Lang {
+  if (!acceptLanguage || acceptLanguage.trim() === '') return 'ru';
+  return acceptLanguage.toLowerCase().includes('ru') ? 'ru' : 'en';
+}
+
+function localizedDisplayName(profile: Profile, lang: Lang) {
+  return (lang === 'ru' ? profile.displayNameRu : undefined) ?? profile.displayName;
+}
+
 // The rendering-friendly view of a question: scoring internals (points/factor,
 // role, rust flags) stay on the server; the frontend only needs prompt+options.
-function renderQuestions(profile: Profile) {
+function renderQuestions(profile: Profile, lang: Lang) {
   return profile.onboarding.questions.map((q: Question) => ({
     id: q.id,
-    prompt: q.prompt ?? q.id,
-    options: q.options.map((o) => ({ value: o.value, label: o.label ?? o.value })),
+    prompt: (lang === 'ru' ? q.promptRu : undefined) ?? q.prompt ?? q.id,
+    options: q.options.map((o) => ({
+      value: o.value,
+      label: (lang === 'ru' ? o.labelRu : undefined) ?? o.label ?? o.value,
+    })),
   }));
 }
 
 export async function profilesRoutes(app: FastifyInstance) {
   // Public: every sport that has a profile definition, with its questions as a
   // list. Lets the frontend show a sport picker + its form in one call.
-  app.get('/questions', async () => {
+  // Localized via Accept-Language (defaults to Russian; "ru" -> Russian,
+  // anything else -> English).
+  app.get('/questions', async (req) => {
+    const lang = pickLang(req.headers['accept-language']);
     return Object.values(registry()).map((p) => ({
       sport: p.sport,
-      displayName: p.displayName,
+      displayName: localizedDisplayName(p, lang),
       archetype: p.archetype,
-      questions: renderQuestions(p),
+      questions: renderQuestions(p, lang),
     }));
   });
 
   // Public: the questionnaire for a single sport, so the frontend can render the
-  // form. Served from the sport's *.profile.json definition.
+  // form. Served from the sport's *.profile.json definition. Localized via
+  // Accept-Language (see /questions above).
   app.get('/sports/:slug/questions', async (req) => {
     const { slug } = parse(slugParam, req.params);
+    const lang = pickLang(req.headers['accept-language']);
 
     const profile = getProfile(slug);
     if (!profile) {
       throw new AppError('this sport has no profile questionnaire yet', 404);
     }
-    return { sport: slug, displayName: profile.displayName, questions: renderQuestions(profile) };
+    return {
+      sport: slug,
+      displayName: localizedDisplayName(profile, lang),
+      questions: renderQuestions(profile, lang),
+    };
   });
 
   // Authenticated: create or update the caller's profile for a sport.

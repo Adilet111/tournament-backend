@@ -2,6 +2,7 @@
   "schemaVersion": "1.0.0",
   "sport": "football",
   "displayName": "Football",
+  "displayNameRu": "Футбол",
   "archetype": "team",
   "lpScale": 100,
   "onboarding": {
@@ -11,12 +12,13 @@
         "id": "highestLevel",
         "role": "anchor",
         "prompt": "Highest level you have played",
+        "promptRu": "Самый высокий уровень, на котором вы играли",
         "options": [
-          { "value": "recreational", "label": "Recreational / pickup", "points": 1000 },
-          { "value": "school", "label": "School / university", "points": 1300 },
-          { "value": "amateur_league", "label": "Amateur league", "points": 1600 },
-          { "value": "semi_pro", "label": "Semi-professional", "points": 1900 },
-          { "value": "professional", "label": "Professional", "points": 2300 }
+          { "value": "recreational", "label": "Recreational / pickup", "labelRu": "Любительский / для себя", "points": 1000 },
+          { "value": "school", "label": "School / university", "labelRu": "Школа / университет", "points": 1300 },
+          { "value": "amateur_league", "label": "Amateur league", "labelRu": "Любительская лига", "points": 1600 },
+          { "value": "semi_pro", "label": "Semi-professional", "labelRu": "Полупрофессиональный", "points": 1900 },
+          { "value": "professional", "label": "Professional", "labelRu": "Профессиональный", "points": 2300 }
         ]
       },
       {
@@ -24,11 +26,12 @@
         "role": "additive",
         "appliesBeforeRust": true,
         "prompt": "How long have you been playing?",
+        "promptRu": "Как долго вы играете?",
         "options": [
-          { "value": "lt2", "label": "Less than 2 years", "points": 0 },
-          { "value": "y2to5", "label": "2–5 years", "points": 100 },
-          { "value": "y5to10", "label": "5–10 years", "points": 200 },
-          { "value": "gt10", "label": "More than 10 years", "points": 300 }
+          { "value": "lt2", "label": "Less than 2 years", "labelRu": "Меньше 2 лет", "points": 0 },
+          { "value": "y2to5", "label": "2–5 years", "labelRu": "2–5 лет", "points": 100 },
+          { "value": "y5to10", "label": "5–10 years", "labelRu": "5–10 лет", "points": 200 },
+          { "value": "gt10", "label": "More than 10 years", "labelRu": "Больше 10 лет", "points": 300 }
         ]
       },
       {
@@ -36,22 +39,24 @@
         "role": "additive",
         "appliesBeforeRust": true,
         "prompt": "How would you rate your own skill?",
+        "promptRu": "Как бы вы оценили свой уровень навыка?",
         "options": [
-          { "value": "beginner", "label": "Beginner", "points": 0 },
-          { "value": "intermediate", "label": "Intermediate", "points": 75 },
-          { "value": "advanced", "label": "Advanced", "points": 150 },
-          { "value": "elite", "label": "Elite", "points": 225 }
+          { "value": "beginner", "label": "Beginner", "labelRu": "Начинающий", "points": 0 },
+          { "value": "intermediate", "label": "Intermediate", "labelRu": "Средний", "points": 75 },
+          { "value": "advanced", "label": "Advanced", "labelRu": "Продвинутый", "points": 150 },
+          { "value": "elite", "label": "Elite", "labelRu": "Элитный", "points": 225 }
         ]
       },
       {
         "id": "recency",
         "role": "rustMultiplier",
         "prompt": "When did you last play regularly?",
+        "promptRu": "Когда вы в последний раз играли регулярно?",
         "options": [
-          { "value": "now", "label": "I play every week", "factor": 1.0 },
-          { "value": "months", "label": "A few months ago", "factor": 0.9 },
-          { "value": "year", "label": "About a year ago", "factor": 0.8 },
-          { "value": "longAgo", "label": "Several years ago", "factor": 0.65 }
+          { "value": "now", "label": "I play every week", "labelRu": "Играю каждую неделю", "factor": 1.0 },
+          { "value": "months", "label": "A few months ago", "labelRu": "Несколько месяцев назад", "factor": 0.9 },
+          { "value": "year", "label": "About a year ago", "labelRu": "Около года назад", "factor": 0.8 },
+          { "value": "longAgo", "label": "Several years ago", "labelRu": "Несколько лет назад", "factor": 0.65 }
         ]
       },
       {
@@ -59,11 +64,12 @@
         "role": "additive",
         "appliesBeforeRust": false,
         "prompt": "How often do you play now?",
+        "promptRu": "Как часто вы играете сейчас?",
         "options": [
-          { "value": "none", "label": "Not currently", "points": 0 },
-          { "value": "low", "label": "A few times a month", "points": 25 },
-          { "value": "medium", "label": "Weekly", "points": 50 },
-          { "value": "high", "label": "Several times a week", "points": 100 }
+          { "value": "none", "label": "Not currently", "labelRu": "Сейчас не играю", "points": 0 },
+          { "value": "low", "label": "A few times a month", "labelRu": "Несколько раз в месяц", "points": 25 },
+          { "value": "medium", "label": "Weekly", "labelRu": "Раз в неделю", "points": 50 },
+          { "value": "high", "label": "Several times a week", "labelRu": "Несколько раз в неделю", "points": 100 }
         ]
       },
       {
@@ -71,11 +77,12 @@
         "role": "attributeWeighting",
         "affectsRating": false,
         "prompt": "Main position",
+        "promptRu": "Основная позиция",
         "options": [
-          { "value": "goalkeeper", "label": "Goalkeeper" },
-          { "value": "defender", "label": "Defender" },
-          { "value": "midfielder", "label": "Midfielder" },
-          { "value": "forward", "label": "Forward" }
+          { "value": "goalkeeper", "label": "Goalkeeper", "labelRu": "Вратарь" },
+          { "value": "defender", "label": "Defender", "labelRu": "Защитник" },
+          { "value": "midfielder", "label": "Midfielder", "labelRu": "Полузащитник" },
+          { "value": "forward", "label": "Forward", "labelRu": "Нападающий" }
         ]
       },
       {
@@ -83,10 +90,11 @@
         "role": "attributeWeighting",
         "affectsRating": false,
         "prompt": "Preferred foot",
+        "promptRu": "Ведущая нога",
         "options": [
-          { "value": "left", "label": "Left" },
-          { "value": "right", "label": "Right" },
-          { "value": "both", "label": "Both" }
+          { "value": "left", "label": "Left", "labelRu": "Левая" },
+          { "value": "right", "label": "Right", "labelRu": "Правая" },
+          { "value": "both", "label": "Both", "labelRu": "Обе" }
         ]
       }
     ]

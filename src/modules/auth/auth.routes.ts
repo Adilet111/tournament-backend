@@ -14,6 +14,8 @@ interface OAuthClaims {
   providerUid: string;
   email: string;
   name?: string;
+  firstName?: string;
+  lastName?: string;
 }
 
 const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID);
@@ -54,13 +56,28 @@ async function verifyToken(
     throw new AppError('Google account email is not verified', 401);
   }
 
-  return { providerUid: payload.sub, email: payload.email, name: payload.name };
+  return {
+    providerUid: payload.sub,
+    email: payload.email,
+    name: payload.name,
+    firstName: payload.given_name,
+    lastName: payload.family_name,
+  };
 }
 
 // Find or create the user for an OAuth identity; first admin-listed email
 // becomes an admin (that's how "me by default" works). `birthDate` (collected
-// by the frontend on the sign-up screen) is stored on first user creation and
+// by the frontend on the sign-up screen) and firstName/lastName (from Google's
+// given_name/family_name claims) are stored on first user creation and
 // back-filled if the user has none yet — never overwritten once set.
+async function backfillNames(user: typeof users.$inferSelect, claims: OAuthClaims) {
+  const patch: Partial<typeof users.$inferInsert> = {};
+  if (!user.firstName && claims.firstName) patch.firstName = claims.firstName;
+  if (!user.lastName && claims.lastName) patch.lastName = claims.lastName;
+  if (Object.keys(patch).length === 0) return user;
+  return (await db.update(users).set(patch).where(eq(users.id, user.id)).returning())[0];
+}
+
 async function upsertUser(
   provider: 'google' | 'apple',
   claims: OAuthClaims,
@@ -87,6 +104,7 @@ async function upsertUser(
         await db.update(users).set({ birthDate }).where(eq(users.id, user.id)).returning()
       )[0];
     }
+    if (user) user = await backfillNames(user, claims);
     return user;
   }
 
@@ -95,12 +113,25 @@ async function upsertUser(
   if (!user) {
     const role: SessionRole = adminEmails.includes(email) ? 'admin' : 'player';
     user = (
-      await db.insert(users).values({ email, name: claims.name, role, birthDate }).returning()
+      await db
+        .insert(users)
+        .values({
+          email,
+          name: claims.name,
+          firstName: claims.firstName,
+          lastName: claims.lastName,
+          role,
+          birthDate,
+        })
+        .returning()
     )[0];
-  } else if (!user.birthDate && birthDate) {
-    user = (
-      await db.update(users).set({ birthDate }).where(eq(users.id, user.id)).returning()
-    )[0];
+  } else {
+    if (!user.birthDate && birthDate) {
+      user = (
+        await db.update(users).set({ birthDate }).where(eq(users.id, user.id)).returning()
+      )[0];
+    }
+    user = await backfillNames(user, claims);
   }
   await db
     .insert(authIdentities)
@@ -133,6 +164,8 @@ export async function authRoutes(app: FastifyInstance) {
         id: user.id,
         email: user.email,
         name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
         role: user.role,
         birthDate: user.birthDate,
       },
@@ -145,7 +178,26 @@ export async function authRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  // The JWT only carries { sub, email, role }, so this reads the current row
+  // to also return name/firstName/lastName/birthDate — otherwise a page
+  // refresh would lose the display name the frontend got at login.
   app.get('/auth/me', { preHandler: app.authenticate }, async (req) => {
-    return { user: req.user };
+    const user = (
+      await db.select().from(users).where(eq(users.id, req.user.sub)).limit(1)
+    )[0];
+    if (!user) {
+      throw new AppError('user not found', 404);
+    }
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        birthDate: user.birthDate,
+      },
+    };
   });
 }

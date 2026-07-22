@@ -60,6 +60,11 @@ export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: text('email').notNull().unique(),
   name: text('name'),
+  // Split from Google's given_name/family_name claims, captured alongside
+  // `name` at sign-in. Nullable: pre-existing users get these back-filled
+  // (from `name`, best-effort) the next time they log in.
+  firstName: text('first_name'),
+  lastName: text('last_name'),
   // Date-only (YYYY-MM-DD), captured at Google sign-in. Nullable: pre-existing
   // users and anyone who signed in before providing it won't have one, which
   // blocks registering for age-restricted tournaments until they set it.

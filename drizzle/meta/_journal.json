@@ -64,6 +64,13 @@
       "when": 1784467225565,
       "tag": "0008_overjoyed_hex",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784741369271,
+      "tag": "0009_add_user_first_last_name",
+      "breakpoints": true
     }
   ]
 }
